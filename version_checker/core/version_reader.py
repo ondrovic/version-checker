@@ -1,0 +1,329 @@
+"""Version reading functionality for executables with efficient caching."""
+
+import json
+import os
+import platform
+from functools import lru_cache
+from pathlib import Path
+from typing import Any, Dict, Optional
+
+import pefile
+
+# Try to import win32api for faster Windows version reading
+try:
+    import win32api
+
+    HAS_WIN32API = True
+except ImportError:
+    HAS_WIN32API = False
+
+
+class VersionReader:
+    """Handles reading version information from executables with efficient caching."""
+
+    def __init__(self, use_cache: bool = True, cache_dir: Optional[Path] = None):
+        """
+        Initialize VersionReader with optional caching.
+
+        Args:
+            use_cache: Whether to enable caching (default: True)
+            cache_dir: Custom cache directory (ignored, kept for backward compatibility)
+        """
+        self.use_cache = use_cache
+        # Cache files are now stored next to executables, so no central cache directory needed
+
+    def get_version(self, file_path: str) -> Optional[str]:
+        """
+        Get version from executable with efficient caching.
+
+        Args:
+            file_path: Path to the executable file.
+
+        Returns:
+            Version string or None if not found.
+        """
+        if not self.use_cache:
+            return self._get_version_direct(file_path)
+
+        # Try cache first
+        cached_version = self._get_cached_version(file_path)
+        if cached_version is not None:
+            return cached_version
+
+        # Get version and cache it
+        version = self._get_version_direct(file_path)
+        if version:
+            self._save_cached_version(file_path, version)
+
+        return version
+
+    def _get_version_direct(self, file_path: str) -> Optional[str]:
+        """
+        Get version directly without caching.
+
+        Args:
+            file_path: Path to the executable file.
+
+        Returns:
+            Version string or None if not found.
+        """
+        # Use the new _get_file_properties method
+        file_properties = self._get_file_properties(file_path)
+
+        if isinstance(file_properties, dict):
+            # Try ProductVersion first, then FileVersion as fallback
+            version = file_properties.get("ProductVersion") or file_properties.get(
+                "FileVersion"
+            )
+            if version and version != "N/A" and isinstance(version, str):
+                return str(version)
+
+        # Fallback to old method if _get_file_properties fails
+        return self._read_version_fallback(file_path)
+
+    def _get_file_properties(self, file_path: str) -> Dict[str, Any]:
+        """
+        Get comprehensive file properties using win32api (Windows only).
+
+        Args:
+            file_path: Path to the executable file.
+
+        Returns:
+            Dictionary containing file properties or error information.
+        """
+        if not HAS_WIN32API or platform.system() != "Windows":
+            return {"Error": "win32api not available or not on Windows"}
+
+        try:
+            # Get fixed file info
+            info = win32api.GetFileVersionInfo(file_path, "\\")
+            ms = info["FileVersionMS"]
+            ls = info["FileVersionLS"]
+            file_version = f"{win32api.HIWORD(ms)}.{win32api.LOWORD(ms)}.{win32api.HIWORD(ls)}.{win32api.LOWORD(ls)}"
+
+            # Get string file info
+            translation = win32api.GetFileVersionInfo(
+                file_path, "\\VarFileInfo\\Translation"
+            )
+            if not translation or len(translation) == 0:
+                return {"Error": "No translation info available"}
+            lang, codepage = translation[0]
+            string_file_info = {}
+
+            str_info_keys = [
+                "CompanyName",
+                "FileDescription",
+                "FileVersion",
+                "ProductName",
+                "ProductVersion",
+                "LegalCopyright",
+            ]
+
+            for key in str_info_keys:
+                try:
+                    string_file_info[key] = win32api.GetFileVersionInfo(
+                        file_path, f"\\StringFileInfo\\{lang:04x}{codepage:04x}\\{key}"
+                    )
+                except Exception:
+                    string_file_info[key] = "N/A"
+
+            return {"FileVersion": file_version, **string_file_info}
+        except Exception as e:
+            return {"Error": str(e)}
+
+    def _read_version_fallback(self, file_path: str) -> Optional[str]:
+        """
+        Fallback version reading method using pefile.
+
+        Args:
+            file_path: Path to the executable file.
+
+        Returns:
+            Version string or None if not found.
+        """
+        try:
+            # Use fast_load to speed up PE parsing
+            pe = pefile.PE(file_path, fast_load=True)
+
+            try:
+                if hasattr(pe, "VS_VERSIONINFO"):
+                    for file_info in pe.FileInfo:
+                        for entry in file_info:
+                            if hasattr(entry, "StringTable"):
+                                for string_table in entry.StringTable:
+                                    for key, value in string_table.entries.items():
+                                        if key.decode() == "ProductVersion":
+                                            return str(value.decode())
+                return None
+            finally:
+                pe.close()  # Always clean up resources
+
+        except Exception as e:
+            print(f"Pefile error: {e}")
+            return None
+
+    def _get_cache_path(self, file_path: str) -> Path:
+        """
+        Get the cache file path for a given executable.
+
+        Args:
+            file_path: Path to the executable file.
+
+        Returns:
+            Path to the cache file in the same directory as the executable.
+        """
+        # Get the directory and filename of the original executable
+        exec_path = Path(file_path)
+        exec_dir = exec_path.parent
+        exec_name = exec_path.name
+
+        # Create cache filename by adding .cached extension
+        cache_filename = f"{exec_name}.cached"
+
+        return exec_dir / cache_filename
+
+    def _get_cached_version(self, file_path: str) -> Optional[str]:
+        """
+        Get cached version if valid.
+
+        Args:
+            file_path: Path to the executable file.
+
+        Returns:
+            Cached version string or None if not valid.
+        """
+        try:
+            cache_path = self._get_cache_path(file_path)
+
+            if not cache_path.exists():
+                return None
+
+            # Check if file has been modified since cache was created
+            file_mtime = os.path.getmtime(file_path)
+
+            with open(cache_path, "r", encoding="utf-8") as f:
+                cache_data = json.load(f)
+
+            # Validate cache
+            if cache_data.get("mtime") != file_mtime:
+                return None
+
+            version = cache_data.get("version")
+            return str(version) if version else None
+
+        except Exception:
+            return None
+
+    def _save_cached_version(self, file_path: str, version: str) -> None:
+        """
+        Save version to cache.
+
+        Args:
+            file_path: Path to the executable file.
+            version: Version string to cache.
+        """
+        try:
+            cache_path = self._get_cache_path(file_path)
+            file_mtime = os.path.getmtime(file_path)
+
+            cache_data = {
+                "version": version,
+                "mtime": file_mtime,
+                "original_path": file_path,
+            }
+
+            with open(cache_path, "w", encoding="utf-8") as f:
+                json.dump(cache_data, f, indent=2)
+
+        except Exception as e:
+            # Don't fail the whole operation if caching fails
+            print(f"Warning: Could not save cache: {e}")
+
+    def clear_cache(self) -> None:
+        """Clear all cache files."""
+        # Cache files are now stored next to executables
+        # This method would need a list of known executable paths to clear their caches
+        print(
+            "Cache files are now stored next to executables. Use clear_cache_for_file() to clear specific caches."
+        )
+
+    def clear_cache_for_file(self, file_path: str) -> None:
+        """
+        Clear cache for a specific executable file.
+
+        Args:
+            file_path: Path to the executable file.
+        """
+        try:
+            cache_path = self._get_cache_path(file_path)
+            if cache_path.exists():
+                cache_path.unlink()
+                print(f"Cleared cache: {cache_path}")
+        except Exception as e:
+            print(f"Warning: Could not clear cache for {file_path}: {e}")
+
+    def cleanup_orphaned_caches(self, file_paths: list) -> None:
+        """
+        Clean up cache files for executables that no longer exist.
+
+        Args:
+            file_paths: List of known executable paths.
+        """
+        for file_path in file_paths:
+            try:
+                # Check if executable still exists
+                if not Path(file_path).exists():
+                    # Executable doesn't exist, remove its cache
+                    cache_path = self._get_cache_path(file_path)
+                    if cache_path.exists():
+                        cache_path.unlink()
+                        print(f"Cleaned up orphaned cache: {cache_path}")
+            except Exception as e:
+                print(f"Warning: Could not check cache for {file_path}: {e}")
+
+
+# Global instance with caching enabled
+_default_reader = VersionReader(use_cache=True)
+
+
+@lru_cache(maxsize=128)
+def get_exe_version(file_path: str) -> Optional[str]:
+    """
+    Get executable version with caching (backward compatibility function).
+
+    Args:
+        file_path: Path to executable file.
+
+    Returns:
+        Version string or None if not found.
+    """
+    return _default_reader.get_version(file_path)
+
+
+def get_exe_version_no_cache(file_path: str) -> Optional[str]:
+    """
+    Get executable version without caching.
+
+    Args:
+        file_path: Path to executable file.
+
+    Returns:
+        Version string or None if not found.
+    """
+    reader = VersionReader(use_cache=False)
+    return reader.get_version(file_path)
+
+
+def clear_version_cache() -> None:
+    """Clear the global version cache."""
+    _default_reader.clear_cache()
+
+
+def cleanup_orphaned_caches(file_paths: list) -> None:
+    """
+    Clean up orphaned cache files.
+
+    Args:
+        file_paths: List of known executable paths.
+    """
+    _default_reader.cleanup_orphaned_caches(file_paths)

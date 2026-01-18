@@ -1,0 +1,8 @@
+{
+  "typeCheckingMode": "strict",
+  "reportMissingImports": true,
+  "exclude": [
+    "**/.venv",
+    "**/node_modules"
+  ]
+}

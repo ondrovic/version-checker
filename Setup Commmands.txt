@@ -1,0 +1,85 @@
+# Version Checker - Setup Commands
+
+# 1. Initialize the project
+mkdir version-checker
+cd version-checker
+
+# 2. Initialize Poetry project
+poetry init --no-interaction \
+    --name "version-checker" \
+    --version "0.1.0" \
+    --description "A tool to check for software updates" \
+    --author "Your Name <your.email@example.com>"
+
+# 3. Add dependencies
+poetry add requests pyyaml beautifulsoup4 pefile packaging click
+poetry add --group dev pytest pytest-cov black isort flake8 mypy pre-commit
+
+# For Windows users (optional but recommended):
+poetry add 'pywin32; sys_platform == "win32"'
+
+# 4. Create directory structure
+mkdir -p version_checker/core
+mkdir -p version_checker/utils
+mkdir -p tests
+
+# 5. Create __init__.py files
+touch version_checker/__init__.py
+touch version_checker/core/__init__.py
+touch version_checker/utils/__init__.py
+touch tests/__init__.py
+
+# 6. Install the package in development mode
+poetry install
+
+# 7. Set up pre-commit hooks (optional)
+poetry run pre-commit install
+
+# 8. Run tests to verify setup
+poetry run pytest
+
+# 9. Usage commands after setup:
+
+# Run the application
+poetry run version-checker
+
+# Or using the shorter alias
+poetry run vcheck
+
+# Run with specific config
+poetry run version-checker --config my-config.yaml
+
+# Show detailed output
+poetry run version-checker --detailed
+
+# Check specific executable version
+poetry run version-checker check-version /path/to/file.exe
+
+# Create example config
+poetry run version-checker --create-example
+
+# Development commands:
+
+# Run tests
+poetry run pytest
+
+# Run tests with coverage
+poetry run pytest --cov=version_checker
+
+# Format code
+poetry run black version_checker tests
+
+# Sort imports
+poetry run isort version_checker tests
+
+# Lint code
+poetry run flake8 version_checker tests
+
+# Type checking
+poetry run mypy version_checker
+
+# Build package
+poetry build
+
+# Publish to PyPI (after configuring credentials)
+poetry publish

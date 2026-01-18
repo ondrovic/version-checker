@@ -1,0 +1,35 @@
+# Version Checker Configuration File
+# Copy this file to config.yaml and customize for your needs
+
+# Required: URL to scrape for the latest version
+site_url: "https://example.com/software"
+
+# Required: Base URL for downloading the latest version
+# The architecture and OS will be automatically detected and appended
+# Example: "https://cos.olived.app/d/OlivedPro_" will become
+#          "https://cos.olived.app/d/OlivedPro_0.23.4_windows_x64.zip"
+base_download_url: "https://example.com/downloads/Software_"
+
+# Required: Path to the installed executable
+file_path: "C:/Program Files/Software/software.exe"
+
+# Optional: Show detailed JSON output (default: false)
+detailed_info: false
+
+# Optional: HTTP request timeout in seconds (default: 10)
+timeout: 10
+
+# Optional: Custom CSS selector for the version element on the webpage
+# If not specified, uses the default selector
+css_selector: "body > nav > div > div > div.hidden.flex-1.items-center.justify-center.md\\:flex > a:nth-child(6)"
+
+# Examples of other CSS selectors you might use:
+# css_selector: ".version-number"
+# css_selector: "#latest-version"
+# css_selector: "[data-version]"
+# css_selector: "h1.release-title"
+# css_selector: ".download-link:first-child"
+
+# Future options (not yet implemented):
+# version_regex: "v?(\\d+\\.\\d+\\.\\d+)"  # Custom regex to extract version
+# user_agent: "Mozilla/5.0..."  # Custom user agent string

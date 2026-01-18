@@ -1,0 +1,18 @@
+{
+  "sourceType": "manual",
+  "model": "sonnet",
+  "thinkingLevel": "medium",
+  "isAutoProfile": false,
+  "phaseModels": {
+    "spec": "sonnet",
+    "planning": "sonnet",
+    "coding": "sonnet",
+    "qa": "sonnet"
+  },
+  "phaseThinking": {
+    "spec": "medium",
+    "planning": "medium",
+    "coding": "medium",
+    "qa": "medium"
+  }
+}

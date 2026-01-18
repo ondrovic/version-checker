@@ -4,7 +4,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, cast
 
 
 class VersionCache:
@@ -50,10 +50,10 @@ class VersionCache:
                 return None
 
             with open(cache_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
+                data: object = json.load(f)
                 # Ensure we return a dict or None
                 if isinstance(data, dict):
-                    return data
+                    return cast(Dict[str, Any], data)
                 return None
         except Exception:
             return None
@@ -83,7 +83,7 @@ class VersionCache:
             return cache_data.get("version") if cache_data else None
         return None
 
-    def cleanup_orphaned_caches(self, file_paths: list) -> None:
+    def cleanup_orphaned_caches(self, file_paths: list[str]) -> None:
         """Clean up cache files for executables that no longer exist."""
         for file_path in file_paths:
             cache_path = self.get_cache_path(file_path)

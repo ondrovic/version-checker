@@ -22,20 +22,19 @@ def test_caching():
     
     # Create a reader with caching enabled
     reader = VersionReader(use_cache=True)
-    
-    print(f"Cache object: {reader.cache}")
-    print(f"Cache type: {type(reader.cache)}")
-    
+
+    print(f"Reader use_cache: {reader.use_cache}")
+
     # Test getting version
     print("\n1. Getting version (should create cache)...")
     version = reader.get_version(test_file)
     print(f"Version: {version}")
-    
+
     # Check if cache file was created
-    cache_path = reader.cache.get_cache_path(test_file)
+    cache_path = reader._get_cache_path(test_file)
     print(f"Cache path: {cache_path}")
     print(f"Cache file exists: {cache_path.exists()}")
-    
+
     if cache_path.exists():
         print("Cache file contents:")
         try:
@@ -43,18 +42,15 @@ def test_caching():
                 print(f.read())
         except Exception as e:
             print(f"Error reading cache: {e}")
-    
+
     # Test getting version again (should use cache)
     print("\n2. Getting version again (should use cache)...")
     version2 = reader.get_version(test_file)
     print(f"Version: {version2}")
-    
-    # Test cache validity
-    print(f"\nCache valid: {reader.cache.is_cache_valid(test_file)}")
-    
-    # Test direct cache methods
-    print("\n3. Testing direct cache methods...")
-    cached_version = reader.cache.get_cached_version(test_file)
+
+    # Test cached version retrieval
+    print("\n3. Testing cached version retrieval...")
+    cached_version = reader._get_cached_version(test_file)
     print(f"Cached version: {cached_version}")
 
 if __name__ == "__main__":

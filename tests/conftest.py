@@ -26,7 +26,7 @@ def sample_config():
 
 
 @pytest.fixture
-def mock_exe_file(temp_dir):
+def mock_exe_file(temp_dir: Path) -> str:
     """Create a mock executable file for testing."""
     exe_path = temp_dir / "test.exe"
     exe_path.write_bytes(b"Mock executable content")

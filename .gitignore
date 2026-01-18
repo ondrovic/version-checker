@@ -128,6 +128,9 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
+# Ruff linter
+.ruff_cache/
+
 # Poetry
 poetry.lock
 
@@ -137,6 +140,14 @@ poetry.lock
 *.swp
 *.swo
 *~
+
+# Claude Code / AI assistants
+.claude/
+.auto-claude/
+
+# Automation tools
+.zencoder/
+.zenflow/
 
 # OS
 .DS_Store

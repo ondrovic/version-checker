@@ -2,7 +2,6 @@
 
 from unittest.mock import patch
 
-import pytest
 
 from version_checker.utils.platform_utils import (
     build_download_url,

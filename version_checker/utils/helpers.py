@@ -27,7 +27,7 @@ def is_windows() -> bool:
     return platform.system() == "Windows"
 
 
-def get_platform_info() -> dict:
+def get_platform_info() -> dict[str, str]:
     """Get platform information."""
     return {
         "system": platform.system(),

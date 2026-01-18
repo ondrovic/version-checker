@@ -1,12 +1,10 @@
 """Tests for caching utilities."""
 
 import json
-import os
 import time
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
 
 from version_checker.utils.cache import VersionCache
 

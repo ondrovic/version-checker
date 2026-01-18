@@ -1,27 +1,47 @@
 """Version reading functionality for executables with efficient caching."""
 
+from __future__ import annotations
+
 import json
 import os
 import platform
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 import pefile
 
 # Try to import win32api for faster Windows version reading
-try:
-    import win32api
+_has_win32api: bool = False
+_win32api_module: Any = None
 
-    HAS_WIN32API = True
-except ImportError:
-    HAS_WIN32API = False
+try:
+    import win32api as _win32api_import
+
+    _win32api_module = _win32api_import
+    _has_win32api = True
+except ImportError:  # pragma: no cover
+    pass
+
+
+def has_win32api() -> bool:
+    """Check if win32api is available."""
+    return _has_win32api
+
+
+def get_win32api() -> Any:
+    """Get the win32api module if available."""
+    return _win32api_module
 
 
 class VersionReader:
     """Handles reading version information from executables with efficient caching."""
 
-    def __init__(self, use_cache: bool = True, cache_dir: Optional[Path] = None):
+    def __init__(
+        self,
+        use_cache: bool = True,
+        cache_dir: Optional[Path] = None,  # pyright: ignore[reportUnusedParameter]
+    ):
         """
         Initialize VersionReader with optional caching.
 
@@ -70,7 +90,8 @@ class VersionReader:
         # Use the new _get_file_properties method
         file_properties = self._get_file_properties(file_path)
 
-        if isinstance(file_properties, dict):
+        # Check if we got an error or valid properties
+        if "Error" not in file_properties:
             # Try ProductVersion first, then FileVersion as fallback
             version = file_properties.get("ProductVersion") or file_properties.get(
                 "FileVersion"
@@ -81,7 +102,7 @@ class VersionReader:
         # Fallback to old method if _get_file_properties fails
         return self._read_version_fallback(file_path)
 
-    def _get_file_properties(self, file_path: str) -> Dict[str, Any]:
+    def _get_file_properties(self, file_path: str) -> dict[str, Any]:
         """
         Get comprehensive file properties using win32api (Windows only).
 
@@ -91,24 +112,25 @@ class VersionReader:
         Returns:
             Dictionary containing file properties or error information.
         """
-        if not HAS_WIN32API or platform.system() != "Windows":
+        win32api = get_win32api()
+        if not has_win32api() or platform.system() != "Windows" or win32api is None:
             return {"Error": "win32api not available or not on Windows"}
 
         try:
             # Get fixed file info
             info = win32api.GetFileVersionInfo(file_path, "\\")
-            ms = info["FileVersionMS"]
-            ls = info["FileVersionLS"]
+            ms: int = info["FileVersionMS"]
+            ls: int = info["FileVersionLS"]
             file_version = f"{win32api.HIWORD(ms)}.{win32api.LOWORD(ms)}.{win32api.HIWORD(ls)}.{win32api.LOWORD(ls)}"
 
             # Get string file info
-            translation = win32api.GetFileVersionInfo(
+            translation: list[tuple[int, int]] = win32api.GetFileVersionInfo(
                 file_path, "\\VarFileInfo\\Translation"
             )
             if not translation or len(translation) == 0:
                 return {"Error": "No translation info available"}
             lang, codepage = translation[0]
-            string_file_info = {}
+            string_file_info: dict[str, str] = {}
 
             str_info_keys = [
                 "CompanyName",
@@ -262,7 +284,7 @@ class VersionReader:
         except Exception as e:
             print(f"Warning: Could not clear cache for {file_path}: {e}")
 
-    def cleanup_orphaned_caches(self, file_paths: list) -> None:
+    def cleanup_orphaned_caches(self, file_paths: list[str]) -> None:
         """
         Clean up cache files for executables that no longer exist.
 
@@ -319,7 +341,7 @@ def clear_version_cache() -> None:
     _default_reader.clear_cache()
 
 
-def cleanup_orphaned_caches(file_paths: list) -> None:
+def cleanup_orphaned_caches(file_paths: list[str]) -> None:
     """
     Clean up orphaned cache files.
 

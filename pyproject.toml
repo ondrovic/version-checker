@@ -79,3 +79,17 @@ ignore_missing_imports = true
 minversion = "6.0"
 addopts = "-ra -q --strict-markers --cov=version_checker"
 testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["version_checker", "tests"]
+omit = [
+    "debug_cache.py",
+    "*/__pycache__/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]

@@ -53,6 +53,9 @@ def get_platform_info() -> Tuple[str, str]:
         else:
             # Default to amd64 for unknown Linux architectures
             arch = "amd64"
+    else:
+        # Default architecture for unknown OS
+        arch = "amd64"
 
     return os_name, arch
 

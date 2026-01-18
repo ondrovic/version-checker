@@ -417,14 +417,14 @@ Here's what the auto-install looks like in action:
 Checking for updates...
 Update available: 1.0.0 → 1.1.0
 
-╭────────────── Auto-Install Progress ──────────────╮
-│ Download URL: https://example.com/MyApp_1.1.0... │
+╭────────────── Auto-Install Progress ───────────────╮
+│ Download URL: https://example.com/MyApp_1.1.0...   │
 │                                                    │
-│ 1. ✓ Stop any running OlivedPro processes        │
-│ 2. ⠋ Download the new version                    │
-│ 3.   Extract and install to the configured...    │
-│ 4.   Start the new version                       │
-│ 5.   Clean up temporary files                    │
+│ 1. ✓ Stop any running <AppName> processes          │
+│ 2. ⠋ Download the new version                      │ 
+│ 3.   Extract and install to the configured...      │
+│ 4.   Start the new version                         │
+│ 5.   Clean up temporary files                      │
 ╰────────────────────────────────────────────────────╯
 
 ✓ Auto-install completed successfully!

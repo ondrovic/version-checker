@@ -1,11 +1,8 @@
 """Tests for helper utility functions."""
 
-import os
-import platform
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
 
 from version_checker.utils.helpers import (
     clear_screen,

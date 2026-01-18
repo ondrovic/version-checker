@@ -4,9 +4,8 @@ import json
 import os
 import time
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 from version_checker.core.version_reader import (
     VersionReader,
@@ -20,7 +19,7 @@ from version_checker.core.version_reader import (
 class TestVersionReader:
     """Test cases for VersionReader class."""
 
-    def test_version_reader_init(self):
+    def test_version_reader_init(self) -> None:
         """Test VersionReader initialization."""
         reader = VersionReader()
         assert reader.use_cache is True
@@ -28,14 +27,16 @@ class TestVersionReader:
         reader_no_cache = VersionReader(use_cache=False)
         assert reader_no_cache.use_cache is False
 
-    def test_version_reader_init_with_cache_dir(self):
+    def test_version_reader_init_with_cache_dir(self) -> None:
         """Test VersionReader initialization with cache_dir (backward compatibility)."""
         # cache_dir parameter is ignored but should not cause errors
         reader = VersionReader(use_cache=True, cache_dir=Path("/some/path"))
         assert reader.use_cache is True
 
     @patch("version_checker.core.version_reader.pefile")
-    def test_read_version_fallback(self, mock_pefile, mock_exe_file):
+    def test_read_version_fallback(
+        self, mock_pefile: MagicMock, mock_exe_file: str
+    ) -> None:
         """Test version reading with pefile fallback method."""
         # Mock pefile.PE
         mock_pe = MagicMock()
@@ -50,7 +51,9 @@ class TestVersionReader:
         mock_entry.StringTable = [mock_string_table]
 
         mock_file_info = MagicMock()
-        mock_file_info.__iter__ = lambda self: iter([mock_entry])
+        mock_file_info.__iter__ = lambda self: iter(
+            [mock_entry]
+        )  # pyright: ignore[reportUnknownLambdaType]
 
         mock_pe.FileInfo = [mock_file_info]
         mock_pe.VS_VERSIONINFO = True
@@ -62,7 +65,9 @@ class TestVersionReader:
         mock_pe.close.assert_called_once()
 
     @patch("version_checker.core.version_reader.pefile")
-    def test_read_version_fallback_no_version_info(self, mock_pefile, mock_exe_file):
+    def test_read_version_fallback_no_version_info(
+        self, mock_pefile: MagicMock, mock_exe_file: str
+    ) -> None:
         """Test version reading when no version info is present."""
         mock_pe = MagicMock()
         mock_pefile.PE.return_value = mock_pe
@@ -75,15 +80,25 @@ class TestVersionReader:
         assert version is None
         mock_pe.close.assert_called_once()
 
-    @patch("version_checker.core.version_reader.HAS_WIN32API", True)
-    @patch("version_checker.core.version_reader.win32api")
+    @patch("version_checker.core.version_reader.has_win32api", return_value=True)
+    @patch("version_checker.core.version_reader.get_win32api")
     @patch("version_checker.core.version_reader.platform")
-    def test_get_file_properties(self, mock_platform, mock_win32api, mock_exe_file):
+    def test_get_file_properties(
+        self,
+        mock_platform: MagicMock,
+        mock_get_win32api: MagicMock,
+        mock_has_win32api: MagicMock,
+        mock_exe_file: str,
+    ) -> None:
         """Test getting file properties with win32api."""
+        _ = mock_has_win32api  # unused but required by patch
         mock_platform.system.return_value = "Windows"
 
+        mock_win32api = MagicMock()
+        mock_get_win32api.return_value = mock_win32api
+
         # Mock win32api response for GetFileVersionInfo with path
-        def mock_get_file_version_info(path, query):
+        def mock_get_file_version_info(path: str, query: str) -> Any:
             if query == "\\":
                 return {
                     "FileVersionMS": 0x00010002,  # Version 1.2
@@ -100,8 +115,12 @@ class TestVersionReader:
                 return "Test Value"
 
         mock_win32api.GetFileVersionInfo.side_effect = mock_get_file_version_info
-        mock_win32api.HIWORD.side_effect = lambda x: (x >> 16) & 0xFFFF
-        mock_win32api.LOWORD.side_effect = lambda x: x & 0xFFFF
+        mock_win32api.HIWORD.side_effect = (
+            lambda x: (x >> 16) & 0xFFFF
+        )  # pyright: ignore[reportUnknownLambdaType]
+        mock_win32api.LOWORD.side_effect = (
+            lambda x: x & 0xFFFF
+        )  # pyright: ignore[reportUnknownLambdaType]
 
         reader = VersionReader(use_cache=False)
         properties = reader._get_file_properties(mock_exe_file)
@@ -110,43 +129,61 @@ class TestVersionReader:
         assert "ProductVersion" in properties
         assert properties["ProductVersion"] == "1.2.3.4"
 
-    @patch("version_checker.core.version_reader.HAS_WIN32API", True)
-    @patch("version_checker.core.version_reader.win32api")
+    @patch("version_checker.core.version_reader.has_win32api", return_value=True)
+    @patch("version_checker.core.version_reader.get_win32api")
     @patch("version_checker.core.version_reader.platform")
     def test_get_file_properties_no_translation(
-        self, mock_platform, mock_win32api, mock_exe_file
-    ):
+        self,
+        mock_platform: MagicMock,
+        mock_get_win32api: MagicMock,
+        mock_has_win32api: MagicMock,
+        mock_exe_file: str,
+    ) -> None:
         """Test getting file properties when no translation info is available."""
+        _ = mock_has_win32api  # unused but required by patch
         mock_platform.system.return_value = "Windows"
 
-        def mock_get_file_version_info(path, query):
+        mock_win32api = MagicMock()
+        mock_get_win32api.return_value = mock_win32api
+
+        def mock_get_file_version_info(path: str, query: str) -> Any:
             if query == "\\":
                 return {
                     "FileVersionMS": 0x00010002,
                     "FileVersionLS": 0x00030004,
                 }
-            elif query == "\\VarFileInfo\\Translation":
-                return []  # No translation info
-            else:
-                return "N/A"
+            # Return empty list for translation info to simulate no translation
+            return []  # No translation info
 
         mock_win32api.GetFileVersionInfo.side_effect = mock_get_file_version_info
-        mock_win32api.HIWORD.side_effect = lambda x: (x >> 16) & 0xFFFF
-        mock_win32api.LOWORD.side_effect = lambda x: x & 0xFFFF
+        mock_win32api.HIWORD.side_effect = (
+            lambda x: (x >> 16) & 0xFFFF
+        )  # pyright: ignore[reportUnknownLambdaType]
+        mock_win32api.LOWORD.side_effect = (
+            lambda x: x & 0xFFFF
+        )  # pyright: ignore[reportUnknownLambdaType]
 
         reader = VersionReader(use_cache=False)
         properties = reader._get_file_properties(mock_exe_file)
 
         assert "Error" in properties
 
-    @patch("version_checker.core.version_reader.HAS_WIN32API", True)
-    @patch("version_checker.core.version_reader.win32api")
+    @patch("version_checker.core.version_reader.has_win32api", return_value=True)
+    @patch("version_checker.core.version_reader.get_win32api")
     @patch("version_checker.core.version_reader.platform")
     def test_get_file_properties_error(
-        self, mock_platform, mock_win32api, mock_exe_file
-    ):
+        self,
+        mock_platform: MagicMock,
+        mock_get_win32api: MagicMock,
+        mock_has_win32api: MagicMock,
+        mock_exe_file: str,
+    ) -> None:
         """Test getting file properties with error."""
+        _ = mock_has_win32api  # unused but required by patch
         mock_platform.system.return_value = "Windows"
+
+        mock_win32api = MagicMock()
+        mock_get_win32api.return_value = mock_win32api
         mock_win32api.GetFileVersionInfo.side_effect = Exception("Test error")
 
         reader = VersionReader(use_cache=False)
@@ -155,19 +192,31 @@ class TestVersionReader:
         assert "Error" in properties
         assert "Test error" in properties["Error"]
 
-    @patch("version_checker.core.version_reader.HAS_WIN32API", False)
-    def test_get_file_properties_no_win32api(self, mock_exe_file):
+    @patch("version_checker.core.version_reader.has_win32api", return_value=False)
+    def test_get_file_properties_no_win32api(
+        self, mock_has_win32api: MagicMock, mock_exe_file: str
+    ) -> None:
         """Test getting file properties when win32api is not available."""
+        _ = mock_has_win32api  # unused but required by patch
         reader = VersionReader(use_cache=False)
         properties = reader._get_file_properties(mock_exe_file)
 
         assert "Error" in properties
         assert "win32api not available" in properties["Error"]
 
-    @patch("version_checker.core.version_reader.HAS_WIN32API", True)
+    @patch("version_checker.core.version_reader.has_win32api", return_value=True)
+    @patch("version_checker.core.version_reader.get_win32api")
     @patch("version_checker.core.version_reader.platform")
-    def test_get_file_properties_not_windows(self, mock_platform, mock_exe_file):
+    def test_get_file_properties_not_windows(
+        self,
+        mock_platform: MagicMock,
+        mock_get_win32api: MagicMock,
+        mock_has_win32api: MagicMock,
+        mock_exe_file: str,
+    ) -> None:
         """Test getting file properties on non-Windows platform."""
+        _ = mock_has_win32api  # unused but required by patch
+        _ = mock_get_win32api  # unused but required by patch
         mock_platform.system.return_value = "Linux"
 
         reader = VersionReader(use_cache=False)
@@ -177,7 +226,9 @@ class TestVersionReader:
         assert "not on Windows" in properties["Error"]
 
     @patch("version_checker.core.version_reader.pefile")
-    def test_read_version_error_handling(self, mock_pefile, mock_exe_file):
+    def test_read_version_error_handling(
+        self, mock_pefile: MagicMock, mock_exe_file: str
+    ) -> None:
         """Test error handling in version reading."""
         mock_pefile.PE.side_effect = Exception("Test error")
 
@@ -186,8 +237,9 @@ class TestVersionReader:
 
         assert version is None
 
-    def test_get_version_with_cache(self, temp_dir, mock_exe_file):
+    def test_get_version_with_cache(self, temp_dir: Path, mock_exe_file: str) -> None:
         """Test getting version with caching enabled."""
+        _ = temp_dir  # unused but required by fixture
         reader = VersionReader(use_cache=True)
 
         # Mock _get_version_direct to return a version
@@ -195,7 +247,7 @@ class TestVersionReader:
             version = reader.get_version(mock_exe_file)
             assert version == "1.0.0"
 
-    def test_get_version_without_cache(self, mock_exe_file):
+    def test_get_version_without_cache(self, mock_exe_file: str) -> None:
         """Test getting version without caching."""
         reader = VersionReader(use_cache=False)
 
@@ -203,8 +255,9 @@ class TestVersionReader:
             version = reader.get_version(mock_exe_file)
             assert version == "1.0.0"
 
-    def test_get_version_uses_cached(self, temp_dir, mock_exe_file):
+    def test_get_version_uses_cached(self, temp_dir: Path, mock_exe_file: str) -> None:
         """Test that get_version uses cached version when available."""
+        _ = temp_dir  # unused but required by fixture
         reader = VersionReader(use_cache=True)
 
         # Save a cached version
@@ -221,7 +274,7 @@ class TestVersionReader:
         version = reader.get_version(mock_exe_file)
         assert version == "2.0.0"
 
-    def test_get_version_direct_with_file_properties(self, mock_exe_file):
+    def test_get_version_direct_with_file_properties(self, mock_exe_file: str) -> None:
         """Test _get_version_direct using file properties."""
         reader = VersionReader(use_cache=False)
 
@@ -233,7 +286,9 @@ class TestVersionReader:
             version = reader._get_version_direct(mock_exe_file)
             assert version == "3.0.0"
 
-    def test_get_version_direct_fallback_to_file_version(self, mock_exe_file):
+    def test_get_version_direct_fallback_to_file_version(
+        self, mock_exe_file: str
+    ) -> None:
         """Test _get_version_direct falls back to FileVersion."""
         reader = VersionReader(use_cache=False)
 
@@ -245,7 +300,7 @@ class TestVersionReader:
             version = reader._get_version_direct(mock_exe_file)
             assert version == "4.0.0"
 
-    def test_get_version_direct_with_na_version(self, mock_exe_file):
+    def test_get_version_direct_with_na_version(self, mock_exe_file: str) -> None:
         """Test _get_version_direct when version is N/A."""
         reader = VersionReader(use_cache=False)
 
@@ -258,7 +313,7 @@ class TestVersionReader:
                 version = reader._get_version_direct(mock_exe_file)
                 assert version == "5.0.0"
 
-    def test_get_version_direct_with_error(self, mock_exe_file):
+    def test_get_version_direct_with_error(self, mock_exe_file: str) -> None:
         """Test _get_version_direct when file properties returns error."""
         reader = VersionReader(use_cache=False)
 
@@ -269,7 +324,7 @@ class TestVersionReader:
                 version = reader._get_version_direct(mock_exe_file)
                 assert version == "6.0.0"
 
-    def test_get_cache_path(self, mock_exe_file):
+    def test_get_cache_path(self, mock_exe_file: str) -> None:
         """Test getting cache path."""
         reader = VersionReader()
         cache_path = reader._get_cache_path(mock_exe_file)
@@ -277,8 +332,11 @@ class TestVersionReader:
         assert cache_path.name == Path(mock_exe_file).name + ".cached"
         assert cache_path.parent == Path(mock_exe_file).parent
 
-    def test_save_and_load_cached_version(self, temp_dir, mock_exe_file):
+    def test_save_and_load_cached_version(
+        self, temp_dir: Path, mock_exe_file: str
+    ) -> None:
         """Test saving and loading cached version."""
+        _ = temp_dir  # unused but required by fixture
         reader = VersionReader(use_cache=True)
 
         reader._save_cached_version(mock_exe_file, "7.0.0")
@@ -286,8 +344,11 @@ class TestVersionReader:
         cached_version = reader._get_cached_version(mock_exe_file)
         assert cached_version == "7.0.0"
 
-    def test_get_cached_version_invalid(self, temp_dir, mock_exe_file):
+    def test_get_cached_version_invalid(
+        self, temp_dir: Path, mock_exe_file: str
+    ) -> None:
         """Test getting cached version when cache is invalid."""
+        _ = temp_dir  # unused but required by fixture
         reader = VersionReader(use_cache=True)
 
         # Save cache
@@ -300,7 +361,7 @@ class TestVersionReader:
         cached_version = reader._get_cached_version(mock_exe_file)
         assert cached_version is None
 
-    def test_save_cached_version_error(self, mock_exe_file):
+    def test_save_cached_version_error(self, mock_exe_file: str) -> None:
         """Test save_cached_version error handling."""
         reader = VersionReader(use_cache=True)
 
@@ -309,7 +370,7 @@ class TestVersionReader:
                 reader._save_cached_version(mock_exe_file, "1.0.0")
                 mock_print.assert_called()
 
-    def test_clear_cache(self):
+    def test_clear_cache(self) -> None:
         """Test clear_cache method."""
         reader = VersionReader()
 
@@ -317,8 +378,9 @@ class TestVersionReader:
             reader.clear_cache()
             mock_print.assert_called()
 
-    def test_clear_cache_for_file(self, temp_dir, mock_exe_file):
+    def test_clear_cache_for_file(self, temp_dir: Path, mock_exe_file: str) -> None:
         """Test clearing cache for specific file."""
+        _ = temp_dir  # unused but required by fixture
         reader = VersionReader(use_cache=True)
 
         # Save cache
@@ -332,7 +394,7 @@ class TestVersionReader:
             assert not cache_path.exists()
             mock_print.assert_called()
 
-    def test_clear_cache_for_file_nonexistent(self, mock_exe_file):
+    def test_clear_cache_for_file_nonexistent(self, mock_exe_file: str) -> None:
         """Test clearing cache for file with no cache."""
         reader = VersionReader(use_cache=True)
 
@@ -340,8 +402,11 @@ class TestVersionReader:
             reader.clear_cache_for_file(mock_exe_file)
             # Should not raise exception
 
-    def test_clear_cache_for_file_error(self, temp_dir, mock_exe_file):
+    def test_clear_cache_for_file_error(
+        self, temp_dir: Path, mock_exe_file: str
+    ) -> None:
         """Test clear_cache_for_file error handling."""
+        _ = temp_dir  # unused but required by fixture
         reader = VersionReader(use_cache=True)
 
         reader._save_cached_version(mock_exe_file, "1.0.0")
@@ -351,7 +416,7 @@ class TestVersionReader:
                 reader.clear_cache_for_file(mock_exe_file)
                 mock_print.assert_called()
 
-    def test_cleanup_orphaned_caches(self, temp_dir, mock_exe_file):
+    def test_cleanup_orphaned_caches(self, temp_dir: Path, mock_exe_file: str) -> None:
         """Test cleanup_orphaned_caches method."""
         reader = VersionReader(use_cache=True)
 
@@ -371,7 +436,7 @@ class TestVersionReader:
             assert not cache_path.exists()
             mock_print.assert_called()
 
-    def test_cleanup_orphaned_caches_error(self):
+    def test_cleanup_orphaned_caches_error(self) -> None:
         """Test cleanup_orphaned_caches error handling."""
         reader = VersionReader(use_cache=True)
 
@@ -380,7 +445,7 @@ class TestVersionReader:
                 reader.cleanup_orphaned_caches(["/some/file.exe"])
                 mock_print.assert_called()
 
-    def test_get_exe_version_function(self, mock_exe_file):
+    def test_get_exe_version_function(self, mock_exe_file: str) -> None:
         """Test the convenience function."""
         with patch(
             "version_checker.core.version_reader._default_reader"
@@ -392,7 +457,7 @@ class TestVersionReader:
             assert version == "1.0.0"
             mock_reader.get_version.assert_called_once_with(mock_exe_file)
 
-    def test_get_exe_version_no_cache_function(self, mock_exe_file):
+    def test_get_exe_version_no_cache_function(self, mock_exe_file: str) -> None:
         """Test the get_exe_version_no_cache function."""
         with patch(
             "version_checker.core.version_reader.VersionReader"
@@ -407,7 +472,7 @@ class TestVersionReader:
             mock_reader_class.assert_called_once_with(use_cache=False)
             mock_reader.get_version.assert_called_once_with(mock_exe_file)
 
-    def test_clear_version_cache_function(self):
+    def test_clear_version_cache_function(self) -> None:
         """Test the clear_version_cache function."""
         with patch(
             "version_checker.core.version_reader._default_reader"
@@ -415,7 +480,7 @@ class TestVersionReader:
             clear_version_cache()
             mock_reader.clear_cache.assert_called_once()
 
-    def test_cleanup_orphaned_caches_function(self):
+    def test_cleanup_orphaned_caches_function(self) -> None:
         """Test the cleanup_orphaned_caches function."""
         file_paths = ["/path/to/file1.exe", "/path/to/file2.exe"]
 
@@ -425,7 +490,7 @@ class TestVersionReader:
             cleanup_orphaned_caches(file_paths)
             mock_reader.cleanup_orphaned_caches.assert_called_once_with(file_paths)
 
-    def test_lru_cache_on_get_exe_version(self, mock_exe_file):
+    def test_lru_cache_on_get_exe_version(self, mock_exe_file: str) -> None:
         """Test that get_exe_version uses LRU cache."""
         with patch(
             "version_checker.core.version_reader._default_reader"

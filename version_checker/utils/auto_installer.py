@@ -26,7 +26,7 @@ class AutoInstaller:
         progress: Optional[Progress] = None,
         task_id: Optional[Any] = None,
         silent: bool = False,
-        progress_callback: Optional[Callable] = None,
+        progress_callback: Optional[Callable[[int, int, float], None]] = None,
         fresh_install: bool = False,
     ):
         """

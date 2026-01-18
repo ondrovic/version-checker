@@ -1,11 +1,9 @@
 """Tests for CLI functionality."""
 
-import sys
 from pathlib import Path
-from unittest.mock import MagicMock, Mock, patch, call
+from unittest.mock import MagicMock, patch
 
 import click
-import pytest
 from click.testing import CliRunner
 
 from version_checker.cli import (
@@ -207,7 +205,9 @@ class TestCheckCommand:
         with runner.isolated_filesystem():
             Path("config.yaml").write_text("site_url: https://example.com\n")
 
-            result = runner.invoke(check, ["--config", "config.yaml", "--no-clear", "-a"])
+            result = runner.invoke(
+                check, ["--config", "config.yaml", "--no-clear", "-a"]
+            )
 
             assert result.exit_code == 1
             assert "failed" in result.output.lower()
@@ -512,7 +512,9 @@ class TestShowConfigCommand:
         with runner.isolated_filesystem():
             Path("config.yaml").write_text("site_url: https://example.com\n")
 
-            result = runner.invoke(check, ["--config", "config.yaml", "--no-clear", "-a"])
+            result = runner.invoke(
+                check, ["--config", "config.yaml", "--no-clear", "-a"]
+            )
 
             assert result.exit_code == 0
             mock_installer_class.assert_called_once()
@@ -554,7 +556,9 @@ class TestShowConfigCommand:
         with runner.isolated_filesystem():
             Path("config.yaml").write_text("site_url: https://example.com\n")
 
-            result = runner.invoke(check, ["--config", "config.yaml", "--no-clear", "-a"])
+            result = runner.invoke(
+                check, ["--config", "config.yaml", "--no-clear", "-a"]
+            )
 
             assert result.exit_code == 0
             # Check that fresh_install=True was passed to installer
@@ -586,7 +590,9 @@ class TestShowConfigCommand:
         with runner.isolated_filesystem():
             Path("config.yaml").write_text("site_url: https://example.com\n")
 
-            result = runner.invoke(check, ["--config", "config.yaml", "--no-clear", "-a"])
+            result = runner.invoke(
+                check, ["--config", "config.yaml", "--no-clear", "-a"]
+            )
 
             assert result.exit_code == 1
             assert "download url not available" in result.output.lower()
@@ -630,7 +636,9 @@ class TestShowConfigCommand:
         with runner.isolated_filesystem():
             Path("config.yaml").write_text("site_url: https://example.com\n")
 
-            result = runner.invoke(check, ["--config", "config.yaml", "--no-clear", "-a"])
+            result = runner.invoke(
+                check, ["--config", "config.yaml", "--no-clear", "-a"]
+            )
 
             assert result.exit_code == 1
             assert "failed" in result.output.lower()
@@ -672,7 +680,9 @@ class TestShowConfigCommand:
         with runner.isolated_filesystem():
             Path("config.yaml").write_text("site_url: https://example.com\n")
 
-            result = runner.invoke(check, ["--config", "config.yaml", "--no-clear", "-a"])
+            result = runner.invoke(
+                check, ["--config", "config.yaml", "--no-clear", "-a"]
+            )
 
             assert result.exit_code == 1
             assert "failed" in result.output.lower()
@@ -715,7 +725,9 @@ class TestShowConfigCommand:
         with runner.isolated_filesystem():
             Path("config.yaml").write_text("site_url: https://example.com\n")
 
-            result = runner.invoke(check, ["--config", "config.yaml", "--no-clear", "-a"])
+            result = runner.invoke(
+                check, ["--config", "config.yaml", "--no-clear", "-a"]
+            )
 
             assert result.exit_code == 1
             assert "failed" in result.output.lower()
@@ -760,7 +772,9 @@ class TestShowConfigCommand:
         with runner.isolated_filesystem():
             Path("config.yaml").write_text("site_url: https://example.com\n")
 
-            result = runner.invoke(check, ["--config", "config.yaml", "--no-clear", "-a"])
+            result = runner.invoke(
+                check, ["--config", "config.yaml", "--no-clear", "-a"]
+            )
 
             assert result.exit_code == 1
             assert "failed" in result.output.lower()

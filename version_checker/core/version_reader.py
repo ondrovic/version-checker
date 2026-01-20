@@ -5,6 +5,9 @@ from __future__ import annotations
 import json
 import os
 import platform
+import re
+import shutil
+import subprocess
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Optional
@@ -87,7 +90,11 @@ class VersionReader:
         Returns:
             Version string or None if not found.
         """
-        # Use the new _get_file_properties method
+        # Use Linux-specific detection on Linux systems
+        if platform.system() == "Linux":
+            return self._get_linux_version(file_path)
+
+        # Windows: Use the _get_file_properties method
         file_properties = self._get_file_properties(file_path)
 
         # Check if we got an error or valid properties
@@ -184,6 +191,115 @@ class VersionReader:
             print(f"Pefile error: {e}")
             return None
 
+    def _resolve_binary(self, app: str) -> Optional[str]:
+        """
+        Resolve an app name to its binary path using shutil.which().
+
+        Args:
+            app: Application name or path.
+
+        Returns:
+            Resolved binary path or None if not found.
+        """
+        return shutil.which(app)
+
+    def _version_from_dpkg(self, package_name: str) -> Optional[str]:
+        """
+        Get version from dpkg package manager (Linux only).
+
+        Args:
+            package_name: Name of the package to query.
+
+        Returns:
+            Version string with 'v' prefix or None if not found.
+        """
+        try:
+            result = subprocess.run(
+                ["dpkg-query", "-W", "-f=${Version}", package_name],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+                check=True,
+            )
+            version = result.stdout.strip()
+            return f"v{version}" if version else None
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            return None
+
+    def _extract_main_version_from_binary(self, file_path: str) -> Optional[str]:
+        """
+        Extract main.version from a binary using `strings` command.
+
+        This is useful for Go binaries that embed version info via ldflags.
+        Example match: -X main.version=v0.24.0
+
+        Args:
+            file_path: Path to the binary file.
+
+        Returns:
+            Version string (e.g., 'v0.24.0') or None if not found.
+        """
+        try:
+            result = subprocess.run(
+                ["strings", file_path],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+                check=True,
+            )
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            return None
+
+        pattern = re.compile(r"main\.version=([^\s\"']+)")
+
+        for line in result.stdout.splitlines():
+            if "main.version" in line:
+                match = pattern.search(line)
+                if match:
+                    return match.group(1)
+
+        return None
+
+    def _get_linux_version(self, file_path: str) -> Optional[str]:
+        """
+        Get version on Linux systems.
+
+        Tries dpkg first, then falls back to extracting main.version from binary.
+
+        Args:
+            file_path: Path to executable or app name.
+
+        Returns:
+            Version string or None if not found.
+        """
+        path = Path(file_path).expanduser()
+        resolved_path = str(path)
+
+        # If it's an explicit file path that exists
+        if path.is_file() and os.access(resolved_path, os.X_OK):
+            # Try extracting version from binary
+            version = self._extract_main_version_from_binary(resolved_path)
+            if version:
+                return version
+            return None
+
+        # Otherwise treat as app name
+        app_name = path.name if path.parent != Path(".") else file_path
+
+        # Try dpkg first
+        version = self._version_from_dpkg(app_name)
+        if version:
+            return version
+
+        # Try to resolve binary and extract version
+        binary_path = self._resolve_binary(app_name)
+        if binary_path:
+            version = self._extract_main_version_from_binary(binary_path)
+            if version:
+                return version
+
+        return None
+
     def _get_cache_path(self, file_path: str) -> Path:
         """
         Get the cache file path for a given executable.
@@ -195,7 +311,7 @@ class VersionReader:
             Path to the cache file in the same directory as the executable.
         """
         # Get the directory and filename of the original executable
-        exec_path = Path(file_path)
+        exec_path = Path(file_path).expanduser()
         exec_dir = exec_path.parent
         exec_name = exec_path.name
 
@@ -221,7 +337,8 @@ class VersionReader:
                 return None
 
             # Check if file has been modified since cache was created
-            file_mtime = os.path.getmtime(file_path)
+            resolved_path = str(Path(file_path).expanduser())
+            file_mtime = os.path.getmtime(resolved_path)
 
             with open(cache_path, "r", encoding="utf-8") as f:
                 cache_data = json.load(f)
@@ -246,12 +363,13 @@ class VersionReader:
         """
         try:
             cache_path = self._get_cache_path(file_path)
-            file_mtime = os.path.getmtime(file_path)
+            resolved_path = str(Path(file_path).expanduser())
+            file_mtime = os.path.getmtime(resolved_path)
 
             cache_data = {
                 "version": version,
                 "mtime": file_mtime,
-                "original_path": file_path,
+                "original_path": resolved_path,
             }
 
             with open(cache_path, "w", encoding="utf-8") as f:

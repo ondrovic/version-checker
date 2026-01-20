@@ -38,7 +38,7 @@ class VersionScraper:
         base_download_url = config.get("base_download_url")
 
         # Check if the executable exists
-        exe_path = Path(installed_exe_path)
+        exe_path = Path(installed_exe_path).expanduser()
         executable_exists = exe_path.exists()
 
         # Get installed version if executable exists

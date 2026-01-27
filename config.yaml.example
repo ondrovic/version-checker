@@ -1,17 +1,56 @@
 # Version Checker Configuration File
 # Copy this file to config.yaml and customize for your needs
 
-# Required: URL to scrape for the latest version
+# ==============================================================================
+# PROVIDER SELECTION
+# ==============================================================================
+
+# Provider type: "scrape" for web scraping (default), "github" for GitHub releases
+# update_type: "scrape"
+
+# ==============================================================================
+# WEB SCRAPING PROVIDER (update_type: "scrape")
+# ==============================================================================
+
+# Required for scrape: URL to scrape for the latest version
 site_url: "https://example.com/software"
 
-# Required: Base URL for downloading the latest version
-# The architecture and OS will be automatically detected and appended
-# Example: "https://cos.olived.app/d/OlivedPro_" will become
-#          "https://cos.olived.app/d/OlivedPro_0.23.4_windows_x64.zip"
-base_download_url: "https://example.com/downloads/Software_"
+# Required for scrape: CSS selector to extract version from the webpage
+css_selector: "body > nav > div > div > div.hidden.flex-1.items-center.justify-center.md\\:flex > a:nth-child(6)"
+
+# Examples of CSS selectors:
+# css_selector: ".version-number"
+# css_selector: "#latest-version"
+# css_selector: "[data-version]"
+# css_selector: "h1.release-title"
+
+# ==============================================================================
+# GITHUB RELEASES PROVIDER (update_type: "github")
+# ==============================================================================
+
+# Required for github: Repository in owner/repo format
+# github_repo: "cli/cli"
+
+# Optional: Regex pattern to extract version from tag_name
+# Default strips the "v" prefix if present
+# version_pattern: "v(.+)"
+
+# Optional: File extension filter for assets (e.g., ".tar.gz", ".zip", ".deb")
+# If not set, matches based on OS and architecture only
+# default_package_type: ".tar.gz"
+
+# ==============================================================================
+# COMMON CONFIGURATION (required for all providers)
+# ==============================================================================
 
 # Required: Path to the installed executable
 file_path: "C:/Program Files/Software/software.exe"
+
+# Optional: Base URL for constructing download URLs (scrape provider only)
+# The architecture and OS will be automatically detected and appended
+# Example: "https://example.com/downloads/Software_" becomes
+#          "https://example.com/downloads/Software_0.23.4_windows_x64.zip"
+base_download_url: "https://example.com/downloads/Software_"
 
 # Optional: Show detailed JSON output (default: false)
 detailed_info: false
@@ -19,17 +58,32 @@ detailed_info: false
 # Optional: HTTP request timeout in seconds (default: 10)
 timeout: 10
 
-# Optional: Custom CSS selector for the version element on the webpage
-# If not specified, uses the default selector
-css_selector: "body > nav > div > div > div.hidden.flex-1.items-center.justify-center.md\\:flex > a:nth-child(6)"
+# ==============================================================================
+# EXAMPLE CONFIGURATIONS
+# ==============================================================================
 
-# Examples of other CSS selectors you might use:
-# css_selector: ".version-number"
-# css_selector: "#latest-version"
-# css_selector: "[data-version]"
-# css_selector: "h1.release-title"
-# css_selector: ".download-link:first-child"
+# --- Example 1: Web Scraping ---
+# update_type: "scrape"
+# site_url: "https://olived.app"
+# css_selector: ".version-badge"
+# file_path: "C:/Program Files/OlivedPro/OlivedPro.exe"
+# base_download_url: "https://cos.olived.app/d/OlivedPro_"
 
-# Future options (not yet implemented):
-# version_regex: "v?(\\d+\\.\\d+\\.\\d+)"  # Custom regex to extract version
-# user_agent: "Mozilla/5.0..."  # Custom user agent string
+# --- Example 2: GitHub Releases (Linux) ---
+# update_type: "github"
+# github_repo: "cli/cli"
+# file_path: "~/bin/gh"
+# version_pattern: "v(.+)"
+# default_package_type: ".tar.gz"
+
+# --- Example 3: GitHub Releases (Windows) ---
+# update_type: "github"
+# github_repo: "sharkdp/bat"
+# file_path: "C:/Users/me/bin/bat.exe"
+# default_package_type: ".zip"
+
+# --- Example 4: GitHub Releases (macOS) ---
+# update_type: "github"
+# github_repo: "jesseduffield/lazygit"
+# file_path: "/usr/local/bin/lazygit"
+# default_package_type: ".tar.gz"

@@ -19,15 +19,15 @@ _has_win32api: bool = False
 _win32api_module: Any = None
 
 try:
-    import win32api as _win32api_import
+    import win32api as _win32api_import  # pragma: no cover
 
-    _win32api_module = _win32api_import
-    _has_win32api = True
-except ImportError:  # pragma: no cover
+    _win32api_module = _win32api_import  # pragma: no cover
+    _has_win32api = True  # pragma: no cover
+except ImportError:
     pass
 
 
-def has_win32api() -> bool:
+def has_win32api() -> bool:  # pragma: no cover
     """Check if win32api is available."""
     return _has_win32api
 

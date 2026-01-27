@@ -288,6 +288,42 @@ class TestConfigValidation:
 
         assert "css_selector" in str(exc_info.value).lower()
 
+    def test_validate_github_provider_missing_repo(self, temp_dir):
+        """Test that github_repo is required for github provider."""
+        config_file = temp_dir / "config.yaml"
+        config_file.write_text(
+            "update_type: github\nfile_path: '/path/to/exe'\n"
+        )
+
+        with pytest.raises(ConfigError) as exc_info:
+            load_config(str(config_file))
+
+        assert "github_repo" in str(exc_info.value).lower()
+
+    def test_validate_github_provider_with_repo(self, temp_dir):
+        """Test that github provider works with github_repo specified."""
+        config_file = temp_dir / "config.yaml"
+        config_file.write_text(
+            "update_type: github\nfile_path: '/path/to/exe'\ngithub_repo: 'owner/repo'\n"
+        )
+
+        cfg = load_config(str(config_file))
+
+        assert cfg.update_type == "github"
+        assert cfg.github_repo == "owner/repo"
+
+    def test_validate_invalid_update_type(self, temp_dir):
+        """Test error for invalid update_type."""
+        config_file = temp_dir / "config.yaml"
+        config_file.write_text(
+            "update_type: invalid\nfile_path: '/path/to/exe'\n"
+        )
+
+        with pytest.raises(ConfigError) as exc_info:
+            load_config(str(config_file))
+
+        assert "invalid update_type" in str(exc_info.value).lower()
+
 
 class TestSelectConfigFile:
     """Test cases for config file selection functionality."""

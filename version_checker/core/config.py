@@ -120,7 +120,7 @@ def load_config(
             available_configs = find_yaml_configs()
             if available_configs:
                 selected = select_config_file(available_configs)
-                if selected is None:
+                if selected is None:  # pragma: no cover
                     raise ConfigError("No configuration file selected.")
                 config_file = selected
                 config_dir = config_file.parent

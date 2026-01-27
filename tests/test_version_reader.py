@@ -274,8 +274,11 @@ class TestVersionReader:
         version = reader.get_version(mock_exe_file)
         assert version == "2.0.0"
 
-    def test_get_version_direct_with_file_properties(self, mock_exe_file: str) -> None:
-        """Test _get_version_direct using file properties."""
+    @patch("version_checker.core.version_reader.platform.system", return_value="Windows")
+    def test_get_version_direct_with_file_properties(
+        self, mock_platform: MagicMock, mock_exe_file: str
+    ) -> None:
+        """Test _get_version_direct using file properties (Windows path)."""
         reader = VersionReader(use_cache=False)
 
         with patch.object(
@@ -286,10 +289,11 @@ class TestVersionReader:
             version = reader._get_version_direct(mock_exe_file)
             assert version == "3.0.0"
 
+    @patch("version_checker.core.version_reader.platform.system", return_value="Windows")
     def test_get_version_direct_fallback_to_file_version(
-        self, mock_exe_file: str
+        self, mock_platform: MagicMock, mock_exe_file: str
     ) -> None:
-        """Test _get_version_direct falls back to FileVersion."""
+        """Test _get_version_direct falls back to FileVersion (Windows path)."""
         reader = VersionReader(use_cache=False)
 
         with patch.object(
@@ -300,8 +304,11 @@ class TestVersionReader:
             version = reader._get_version_direct(mock_exe_file)
             assert version == "4.0.0"
 
-    def test_get_version_direct_with_na_version(self, mock_exe_file: str) -> None:
-        """Test _get_version_direct when version is N/A."""
+    @patch("version_checker.core.version_reader.platform.system", return_value="Windows")
+    def test_get_version_direct_with_na_version(
+        self, mock_platform: MagicMock, mock_exe_file: str
+    ) -> None:
+        """Test _get_version_direct when version is N/A (Windows path)."""
         reader = VersionReader(use_cache=False)
 
         with patch.object(
@@ -313,8 +320,11 @@ class TestVersionReader:
                 version = reader._get_version_direct(mock_exe_file)
                 assert version == "5.0.0"
 
-    def test_get_version_direct_with_error(self, mock_exe_file: str) -> None:
-        """Test _get_version_direct when file properties returns error."""
+    @patch("version_checker.core.version_reader.platform.system", return_value="Windows")
+    def test_get_version_direct_with_error(
+        self, mock_platform: MagicMock, mock_exe_file: str
+    ) -> None:
+        """Test _get_version_direct when file properties returns error (Windows path)."""
         reader = VersionReader(use_cache=False)
 
         with patch.object(
@@ -507,3 +517,276 @@ class TestVersionReader:
             # Due to LRU cache, should only call once
             # Note: This might be called more than once in test environment
             # but the cache should work in production
+
+
+class TestLinuxVersionMethods:
+    """Test cases for Linux-specific version detection methods."""
+
+    @patch("version_checker.core.version_reader.subprocess.run")
+    def test_version_from_dpkg_success(self, mock_run: MagicMock) -> None:
+        """Test successful dpkg version extraction."""
+        mock_run.return_value = MagicMock(stdout="1.2.3\n")
+
+        reader = VersionReader(use_cache=False)
+        version = reader._version_from_dpkg("mypackage")
+
+        assert version == "v1.2.3"
+        mock_run.assert_called_once()
+
+    @patch("version_checker.core.version_reader.subprocess.run")
+    def test_version_from_dpkg_empty(self, mock_run: MagicMock) -> None:
+        """Test dpkg version extraction with empty result."""
+        mock_run.return_value = MagicMock(stdout="")
+
+        reader = VersionReader(use_cache=False)
+        version = reader._version_from_dpkg("mypackage")
+
+        assert version is None
+
+    @patch("version_checker.core.version_reader.subprocess.run")
+    def test_version_from_dpkg_error(self, mock_run: MagicMock) -> None:
+        """Test dpkg version extraction with error."""
+        import subprocess
+        mock_run.side_effect = subprocess.CalledProcessError(1, "dpkg-query")
+
+        reader = VersionReader(use_cache=False)
+        version = reader._version_from_dpkg("mypackage")
+
+        assert version is None
+
+    @patch("version_checker.core.version_reader.subprocess.run")
+    def test_version_from_dpkg_not_found(self, mock_run: MagicMock) -> None:
+        """Test dpkg version extraction when dpkg not found."""
+        mock_run.side_effect = FileNotFoundError()
+
+        reader = VersionReader(use_cache=False)
+        version = reader._version_from_dpkg("mypackage")
+
+        assert version is None
+
+    @patch("version_checker.core.version_reader.subprocess.run")
+    def test_version_from_pacman_success(self, mock_run: MagicMock) -> None:
+        """Test successful pacman version extraction."""
+        mock_run.return_value = MagicMock(stdout="heroic 2.19.0-1\n")
+
+        reader = VersionReader(use_cache=False)
+        version = reader._version_from_pacman("heroic")
+
+        assert version == "v2.19.0"
+
+    @patch("version_checker.core.version_reader.subprocess.run")
+    def test_version_from_pacman_no_suffix(self, mock_run: MagicMock) -> None:
+        """Test pacman version extraction without release suffix."""
+        mock_run.return_value = MagicMock(stdout="myapp 1.0.0\n")
+
+        reader = VersionReader(use_cache=False)
+        version = reader._version_from_pacman("myapp")
+
+        assert version == "v1.0.0"
+
+    @patch("version_checker.core.version_reader.subprocess.run")
+    def test_version_from_pacman_short_output(self, mock_run: MagicMock) -> None:
+        """Test pacman version extraction with short output."""
+        mock_run.return_value = MagicMock(stdout="heroic\n")
+
+        reader = VersionReader(use_cache=False)
+        version = reader._version_from_pacman("heroic")
+
+        assert version is None
+
+    @patch("version_checker.core.version_reader.subprocess.run")
+    def test_version_from_pacman_error(self, mock_run: MagicMock) -> None:
+        """Test pacman version extraction with error."""
+        import subprocess
+        mock_run.side_effect = subprocess.CalledProcessError(1, "pacman")
+
+        reader = VersionReader(use_cache=False)
+        version = reader._version_from_pacman("mypackage")
+
+        assert version is None
+
+    @patch("version_checker.core.version_reader.subprocess.run")
+    def test_extract_main_version_from_binary_success(self, mock_run: MagicMock) -> None:
+        """Test successful version extraction from binary."""
+        mock_run.return_value = MagicMock(
+            stdout="some data\nmain.version=v1.2.3\nmore data\n"
+        )
+
+        reader = VersionReader(use_cache=False)
+        version = reader._extract_main_version_from_binary("/path/to/binary")
+
+        assert version == "v1.2.3"
+
+    @patch("version_checker.core.version_reader.subprocess.run")
+    def test_extract_main_version_from_binary_not_found(self, mock_run: MagicMock) -> None:
+        """Test version extraction when main.version not found."""
+        mock_run.return_value = MagicMock(stdout="no version here\n")
+
+        reader = VersionReader(use_cache=False)
+        version = reader._extract_main_version_from_binary("/path/to/binary")
+
+        assert version is None
+
+    @patch("version_checker.core.version_reader.subprocess.run")
+    def test_extract_main_version_from_binary_error(self, mock_run: MagicMock) -> None:
+        """Test version extraction with subprocess error."""
+        import subprocess
+        mock_run.side_effect = subprocess.CalledProcessError(1, "strings")
+
+        reader = VersionReader(use_cache=False)
+        version = reader._extract_main_version_from_binary("/path/to/binary")
+
+        assert version is None
+
+    @patch("version_checker.core.version_reader.subprocess.run")
+    def test_extract_main_version_strings_not_found(self, mock_run: MagicMock) -> None:
+        """Test version extraction when strings command not found."""
+        mock_run.side_effect = FileNotFoundError()
+
+        reader = VersionReader(use_cache=False)
+        version = reader._extract_main_version_from_binary("/path/to/binary")
+
+        assert version is None
+
+    def test_resolve_binary(self) -> None:
+        """Test _resolve_binary method."""
+        reader = VersionReader(use_cache=False)
+
+        # Test with a command that definitely exists
+        with patch("shutil.which", return_value="/usr/bin/python"):
+            result = reader._resolve_binary("python")
+            assert result == "/usr/bin/python"
+
+    def test_resolve_binary_not_found(self) -> None:
+        """Test _resolve_binary when binary not found."""
+        reader = VersionReader(use_cache=False)
+
+        with patch("shutil.which", return_value=None):
+            result = reader._resolve_binary("nonexistent")
+            assert result is None
+
+    @patch("version_checker.core.version_reader.platform.system", return_value="Linux")
+    def test_get_linux_version_with_file(self, mock_platform: MagicMock, temp_dir: Path) -> None:
+        """Test _get_linux_version with existing executable file."""
+        # Create a mock executable
+        exe_file = temp_dir / "myapp"
+        exe_file.write_bytes(b"#!/bin/bash\necho test")
+        exe_file.chmod(0o755)
+
+        reader = VersionReader(use_cache=False)
+
+        with patch.object(reader, "_extract_main_version_from_binary", return_value="v1.0.0"):
+            version = reader._get_linux_version(str(exe_file))
+            assert version == "v1.0.0"
+
+    @patch("version_checker.core.version_reader.platform.system", return_value="Linux")
+    def test_get_linux_version_file_fallback_to_dpkg(
+        self, mock_platform: MagicMock, temp_dir: Path
+    ) -> None:
+        """Test _get_linux_version falls back to dpkg for file."""
+        exe_file = temp_dir / "myapp"
+        exe_file.write_bytes(b"#!/bin/bash\necho test")
+        exe_file.chmod(0o755)
+
+        reader = VersionReader(use_cache=False)
+
+        with patch.object(reader, "_extract_main_version_from_binary", return_value=None):
+            with patch.object(reader, "_version_from_dpkg", return_value="v2.0.0"):
+                version = reader._get_linux_version(str(exe_file))
+                assert version == "v2.0.0"
+
+    @patch("version_checker.core.version_reader.platform.system", return_value="Linux")
+    def test_get_linux_version_file_fallback_to_pacman(
+        self, mock_platform: MagicMock, temp_dir: Path
+    ) -> None:
+        """Test _get_linux_version falls back to pacman for file."""
+        exe_file = temp_dir / "myapp"
+        exe_file.write_bytes(b"#!/bin/bash\necho test")
+        exe_file.chmod(0o755)
+
+        reader = VersionReader(use_cache=False)
+
+        with patch.object(reader, "_extract_main_version_from_binary", return_value=None):
+            with patch.object(reader, "_version_from_dpkg", return_value=None):
+                with patch.object(reader, "_version_from_pacman", return_value="v3.0.0"):
+                    version = reader._get_linux_version(str(exe_file))
+                    assert version == "v3.0.0"
+
+    @patch("version_checker.core.version_reader.platform.system", return_value="Linux")
+    def test_get_linux_version_file_all_fail(
+        self, mock_platform: MagicMock, temp_dir: Path
+    ) -> None:
+        """Test _get_linux_version returns None when all methods fail for file."""
+        exe_file = temp_dir / "myapp"
+        exe_file.write_bytes(b"#!/bin/bash\necho test")
+        exe_file.chmod(0o755)
+
+        reader = VersionReader(use_cache=False)
+
+        with patch.object(reader, "_extract_main_version_from_binary", return_value=None):
+            with patch.object(reader, "_version_from_dpkg", return_value=None):
+                with patch.object(reader, "_version_from_pacman", return_value=None):
+                    version = reader._get_linux_version(str(exe_file))
+                    assert version is None
+
+    @patch("version_checker.core.version_reader.platform.system", return_value="Linux")
+    def test_get_linux_version_app_name_dpkg(self, mock_platform: MagicMock) -> None:
+        """Test _get_linux_version with app name using dpkg."""
+        reader = VersionReader(use_cache=False)
+
+        with patch.object(reader, "_version_from_dpkg", return_value="v1.0.0"):
+            version = reader._get_linux_version("myapp")
+            assert version == "v1.0.0"
+
+    @patch("version_checker.core.version_reader.platform.system", return_value="Linux")
+    def test_get_linux_version_app_name_pacman(self, mock_platform: MagicMock) -> None:
+        """Test _get_linux_version with app name using pacman."""
+        reader = VersionReader(use_cache=False)
+
+        with patch.object(reader, "_version_from_dpkg", return_value=None):
+            with patch.object(reader, "_version_from_pacman", return_value="v2.0.0"):
+                version = reader._get_linux_version("myapp")
+                assert version == "v2.0.0"
+
+    @patch("version_checker.core.version_reader.platform.system", return_value="Linux")
+    def test_get_linux_version_app_name_resolve_binary(self, mock_platform: MagicMock) -> None:
+        """Test _get_linux_version with app name resolving binary."""
+        reader = VersionReader(use_cache=False)
+
+        with patch.object(reader, "_version_from_dpkg", return_value=None):
+            with patch.object(reader, "_version_from_pacman", return_value=None):
+                with patch.object(reader, "_resolve_binary", return_value="/usr/bin/myapp"):
+                    with patch.object(reader, "_extract_main_version_from_binary", return_value="v3.0.0"):
+                        version = reader._get_linux_version("myapp")
+                        assert version == "v3.0.0"
+
+    @patch("version_checker.core.version_reader.platform.system", return_value="Linux")
+    def test_get_linux_version_app_name_all_fail(self, mock_platform: MagicMock) -> None:
+        """Test _get_linux_version returns None when all methods fail for app name."""
+        reader = VersionReader(use_cache=False)
+
+        with patch.object(reader, "_version_from_dpkg", return_value=None):
+            with patch.object(reader, "_version_from_pacman", return_value=None):
+                with patch.object(reader, "_resolve_binary", return_value=None):
+                    version = reader._get_linux_version("myapp")
+                    assert version is None
+
+    def test_get_cache_dir_with_xdg(self, monkeypatch: Any, temp_dir: Path) -> None:
+        """Test _get_cache_dir respects XDG_CACHE_HOME."""
+        custom_cache = temp_dir / "custom_cache"
+        monkeypatch.setenv("XDG_CACHE_HOME", str(custom_cache))
+
+        reader = VersionReader(use_cache=True)
+        cache_dir = reader._get_cache_dir()
+
+        assert cache_dir == custom_cache / "version-checker"
+        assert cache_dir.exists()
+
+    def test_clear_cache_with_error(self) -> None:
+        """Test clear_cache error handling."""
+        reader = VersionReader()
+
+        with patch.object(reader, "_get_cache_dir", side_effect=Exception("Test error")):
+            with patch("builtins.print") as mock_print:
+                reader.clear_cache()
+                mock_print.assert_called()

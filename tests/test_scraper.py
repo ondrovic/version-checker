@@ -240,3 +240,296 @@ class TestVersionScraper:
 
             assert result == {"test": "result"}
             mock_scraper.scrape_version_number.assert_called_once_with(sample_config)
+
+
+class TestGitHubProvider:
+    """Test cases for GitHub provider functionality."""
+
+    @patch("version_checker.core.scraper.requests")
+    def test_fetch_github_release_success(self, mock_requests):
+        """Test successful GitHub release fetch."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"tag_name": "v1.0.0", "assets": []}
+        mock_requests.get.return_value = mock_response
+
+        scraper = VersionScraper()
+        result = scraper._fetch_github_release("owner/repo", 10)
+
+        assert result == {"tag_name": "v1.0.0", "assets": []}
+        mock_requests.get.assert_called_once()
+
+    @patch("version_checker.core.scraper.requests")
+    def test_fetch_github_release_404(self, mock_requests):
+        """Test GitHub release fetch with 404."""
+        mock_response = MagicMock()
+        mock_response.status_code = 404
+        mock_requests.get.return_value = mock_response
+
+        scraper = VersionScraper()
+        result = scraper._fetch_github_release("owner/repo", 10)
+
+        assert result is None
+
+    @patch("version_checker.core.scraper.requests")
+    def test_fetch_github_release_403(self, mock_requests):
+        """Test GitHub release fetch with 403 rate limit."""
+        mock_response = MagicMock()
+        mock_response.status_code = 403
+        mock_requests.get.return_value = mock_response
+
+        scraper = VersionScraper()
+        result = scraper._fetch_github_release("owner/repo", 10)
+
+        assert result is None
+
+    @patch("version_checker.core.scraper.requests")
+    def test_fetch_github_release_exception(self, mock_requests):
+        """Test GitHub release fetch with exception."""
+        mock_requests.get.side_effect = Exception("Network error")
+
+        scraper = VersionScraper()
+        result = scraper._fetch_github_release("owner/repo", 10)
+
+        assert result is None
+
+    def test_extract_version_from_tag_no_pattern(self):
+        """Test version extraction without pattern."""
+        scraper = VersionScraper()
+
+        assert scraper._extract_version_from_tag("v1.0.0", None) == "1.0.0"
+        assert scraper._extract_version_from_tag("1.0.0", None) == "1.0.0"
+
+    def test_extract_version_from_tag_with_pattern(self):
+        """Test version extraction with regex pattern."""
+        scraper = VersionScraper()
+
+        result = scraper._extract_version_from_tag("release-1.2.3", r"release-(\d+\.\d+\.\d+)")
+        assert result == "1.2.3"
+
+    def test_extract_version_from_tag_pattern_no_match(self):
+        """Test version extraction when pattern doesn't match."""
+        scraper = VersionScraper()
+
+        result = scraper._extract_version_from_tag("v1.0.0", r"release-(\d+)")
+        assert result == "1.0.0"  # Falls back to lstrip
+
+    def test_extract_version_from_tag_invalid_pattern(self):
+        """Test version extraction with invalid pattern."""
+        scraper = VersionScraper()
+
+        result = scraper._extract_version_from_tag("v1.0.0", r"[invalid")
+        assert result == "1.0.0"  # Falls back to lstrip
+
+    @patch("version_checker.core.scraper.find_best_asset")
+    def test_find_matching_asset_found(self, mock_find_best):
+        """Test finding matching asset."""
+        mock_find_best.return_value = {"browser_download_url": "https://example.com/file.zip"}
+
+        scraper = VersionScraper()
+        result = scraper._find_matching_asset([{"name": "file.zip"}], ".zip")
+
+        assert result == "https://example.com/file.zip"
+
+    @patch("version_checker.core.scraper.find_best_asset")
+    def test_find_matching_asset_not_found(self, mock_find_best):
+        """Test finding matching asset when none match."""
+        mock_find_best.return_value = None
+
+        scraper = VersionScraper()
+        result = scraper._find_matching_asset([{"name": "file.zip"}], ".zip")
+
+        assert result is None
+
+    def test_display_available_assets(self, capsys):
+        """Test displaying available assets."""
+        scraper = VersionScraper()
+        assets = [{"name": "file1.zip"}, {"name": "file2.tar.gz"}]
+
+        scraper._display_available_assets(assets)
+
+        captured = capsys.readouterr()
+        assert "file1.zip" in captured.out
+        assert "file2.tar.gz" in captured.out
+
+    @patch("pathlib.Path.exists")
+    @patch("version_checker.core.scraper.get_exe_version")
+    @patch("version_checker.core.scraper.VersionScraper._fetch_github_release")
+    def test_scrape_github_version_success(self, mock_fetch, mock_get_version, mock_exists):
+        """Test successful GitHub version scraping."""
+        mock_exists.return_value = True
+        mock_get_version.return_value = "1.0.0"
+        mock_fetch.return_value = {
+            "tag_name": "v1.0.1",
+            "assets": [{"name": "app_linux_amd64.tar.gz", "browser_download_url": "https://example.com/file.tar.gz"}]
+        }
+
+        config = {
+            "update_type": "github",
+            "github_repo": "owner/repo",
+            "file_path": "/path/to/exe",
+            "timeout": 10,
+        }
+
+        scraper = VersionScraper()
+        result = scraper.scrape_version_number(config)
+
+        assert result is not None
+        assert result["latestVersion"] == "1.0.1"
+        assert result["installedVersion"] == "1.0.0"
+        assert result["needsUpdate"] is True
+
+    @patch("pathlib.Path.exists")
+    @patch("version_checker.core.scraper.VersionScraper._fetch_github_release")
+    def test_scrape_github_version_fresh_install(self, mock_fetch, mock_exists):
+        """Test GitHub version scraping for fresh install."""
+        mock_exists.return_value = False
+        mock_fetch.return_value = {
+            "tag_name": "v1.0.0",
+            "assets": []
+        }
+
+        config = {
+            "update_type": "github",
+            "github_repo": "owner/repo",
+            "file_path": "/path/to/exe",
+        }
+
+        scraper = VersionScraper()
+        result = scraper.scrape_version_number(config)
+
+        assert result is not None
+        assert result["freshInstall"] is True
+        assert result["installedVersion"] == "Not installed"
+
+    def test_scrape_github_version_missing_repo(self):
+        """Test GitHub version scraping with missing repo."""
+        config = {
+            "update_type": "github",
+            "file_path": "/path/to/exe",
+        }
+
+        scraper = VersionScraper()
+        result = scraper.scrape_version_number(config)
+
+        assert result is None
+
+    @patch("version_checker.core.scraper.VersionScraper._fetch_github_release")
+    def test_scrape_github_version_fetch_failed(self, mock_fetch):
+        """Test GitHub version scraping when fetch fails."""
+        mock_fetch.return_value = None
+
+        config = {
+            "update_type": "github",
+            "github_repo": "owner/repo",
+            "file_path": "/path/to/exe",
+        }
+
+        scraper = VersionScraper()
+        result = scraper.scrape_version_number(config)
+
+        assert result is None
+
+    @patch("pathlib.Path.exists")
+    @patch("version_checker.core.scraper.get_exe_version")
+    @patch("version_checker.core.scraper.VersionScraper._fetch_github_release")
+    def test_scrape_github_version_no_installed_version(self, mock_fetch, mock_get_version, mock_exists):
+        """Test GitHub scraping when installed version can't be read."""
+        mock_exists.return_value = True
+        mock_get_version.return_value = None
+        mock_fetch.return_value = {"tag_name": "v1.0.0", "assets": []}
+
+        config = {
+            "update_type": "github",
+            "github_repo": "owner/repo",
+            "file_path": "/path/to/exe",
+        }
+
+        scraper = VersionScraper()
+        result = scraper.scrape_version_number(config)
+
+        assert result is None
+
+    @patch("pathlib.Path.exists")
+    @patch("version_checker.core.scraper.get_exe_version")
+    @patch("version_checker.core.scraper.VersionScraper._fetch_github_release")
+    @patch("version_checker.core.scraper.VersionScraper._find_matching_asset")
+    @patch("version_checker.core.scraper.VersionScraper._display_available_assets")
+    def test_scrape_github_version_no_matching_asset(
+        self, mock_display, mock_find, mock_fetch, mock_get_version, mock_exists
+    ):
+        """Test GitHub scraping with no matching asset shows available assets."""
+        mock_exists.return_value = True
+        mock_get_version.return_value = "0.9.0"
+        mock_fetch.return_value = {
+            "tag_name": "v1.0.0",
+            "assets": [{"name": "other.zip"}]
+        }
+        mock_find.return_value = None
+
+        config = {
+            "update_type": "github",
+            "github_repo": "owner/repo",
+            "file_path": "/path/to/exe",
+        }
+
+        scraper = VersionScraper()
+        result = scraper.scrape_version_number(config)
+
+        assert result is not None
+        mock_display.assert_called_once()
+
+    @patch("pathlib.Path.exists")
+    @patch("version_checker.core.scraper.get_exe_version")
+    @patch("version_checker.core.scraper.VersionScraper._fetch_github_release")
+    @patch("version_checker.core.scraper.VersionScraper._find_matching_asset")
+    def test_scrape_github_version_with_download_url(
+        self, mock_find, mock_fetch, mock_get_version, mock_exists
+    ):
+        """Test GitHub scraping includes download URL when found."""
+        mock_exists.return_value = True
+        mock_get_version.return_value = "0.9.0"
+        mock_fetch.return_value = {
+            "tag_name": "v1.0.0",
+            "assets": [{"name": "app.zip"}]
+        }
+        mock_find.return_value = "https://example.com/app.zip"
+
+        config = {
+            "update_type": "github",
+            "github_repo": "owner/repo",
+            "file_path": "/path/to/exe",
+        }
+
+        scraper = VersionScraper()
+        result = scraper.scrape_version_number(config)
+
+        assert result is not None
+        assert result["downloadUrl"] == "https://example.com/app.zip"
+
+    @patch("pathlib.Path.exists")
+    @patch("version_checker.core.scraper.get_exe_version")
+    @patch("version_checker.core.scraper.VersionScraper._fetch_github_release")
+    def test_scrape_github_version_with_version_pattern(
+        self, mock_fetch, mock_get_version, mock_exists
+    ):
+        """Test GitHub scraping with custom version pattern."""
+        mock_exists.return_value = True
+        mock_get_version.return_value = "1.0.0"
+        mock_fetch.return_value = {
+            "tag_name": "release-2.0.0",
+            "assets": []
+        }
+
+        config = {
+            "update_type": "github",
+            "github_repo": "owner/repo",
+            "file_path": "/path/to/exe",
+            "version_pattern": r"release-(\d+\.\d+\.\d+)",
+        }
+
+        scraper = VersionScraper()
+        result = scraper.scrape_version_number(config)
+
+        assert result is not None
+        assert result["latestVersion"] == "2.0.0"

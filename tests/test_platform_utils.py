@@ -5,8 +5,11 @@ from unittest.mock import patch
 
 from version_checker.utils.platform_utils import (
     build_download_url,
+    find_best_asset,
     get_platform_display_name,
     get_platform_info,
+    get_platform_patterns,
+    match_asset_to_platform,
 )
 
 
@@ -369,3 +372,173 @@ class TestGetPlatformDisplayName:
         display_name = get_platform_display_name()
 
         assert display_name == "Unknownos X64"
+
+
+class TestGetPlatformPatterns:
+    """Test cases for get_platform_patterns function."""
+
+    @patch("version_checker.utils.platform_utils.get_platform_info")
+    def test_patterns_linux_amd64(self, mock_get_platform):
+        """Test patterns for Linux AMD64."""
+        mock_get_platform.return_value = ("linux", "amd64")
+
+        patterns = get_platform_patterns()
+
+        assert "linux_amd64" in patterns
+        assert "linux-amd64" in patterns
+        assert "x86_64-unknown-linux" in patterns
+
+    @patch("version_checker.utils.platform_utils.get_platform_info")
+    def test_patterns_linux_arm64(self, mock_get_platform):
+        """Test patterns for Linux ARM64."""
+        mock_get_platform.return_value = ("linux", "arm64")
+
+        patterns = get_platform_patterns()
+
+        assert "linux_arm64" in patterns
+        assert "linux-arm64" in patterns
+        assert "aarch64-unknown-linux" in patterns
+
+    @patch("version_checker.utils.platform_utils.get_platform_info")
+    def test_patterns_mac_arm64(self, mock_get_platform):
+        """Test patterns for macOS ARM64."""
+        mock_get_platform.return_value = ("mac", "arm64")
+
+        patterns = get_platform_patterns()
+
+        assert "darwin_arm64" in patterns
+        assert "macos_arm64" in patterns
+        assert "aarch64-apple-darwin" in patterns
+
+    @patch("version_checker.utils.platform_utils.get_platform_info")
+    def test_patterns_mac_intel(self, mock_get_platform):
+        """Test patterns for macOS Intel."""
+        mock_get_platform.return_value = ("mac", "intel")
+
+        patterns = get_platform_patterns()
+
+        assert "darwin_amd64" in patterns
+        assert "macos_x86_64" in patterns
+        assert "x86_64-apple-darwin" in patterns
+
+    @patch("version_checker.utils.platform_utils.get_platform_info")
+    def test_patterns_windows_x64(self, mock_get_platform):
+        """Test patterns for Windows x64."""
+        mock_get_platform.return_value = ("windows", "x64")
+
+        patterns = get_platform_patterns()
+
+        assert "windows_x64" in patterns
+        assert "windows-x64" in patterns
+        assert "win64" in patterns
+
+    @patch("version_checker.utils.platform_utils.get_platform_info")
+    def test_patterns_windows_arm64(self, mock_get_platform):
+        """Test patterns for Windows ARM64."""
+        mock_get_platform.return_value = ("windows", "arm64")
+
+        patterns = get_platform_patterns()
+
+        assert "windows_arm64" in patterns
+        assert "windows-arm64" in patterns
+
+    @patch("version_checker.utils.platform_utils.get_platform_info")
+    def test_patterns_unknown_returns_empty(self, mock_get_platform):
+        """Test patterns for unknown platform returns empty list."""
+        mock_get_platform.return_value = ("unknown", "unknown")
+
+        patterns = get_platform_patterns()
+
+        assert patterns == []
+
+
+class TestMatchAssetToPlatform:
+    """Test cases for match_asset_to_platform function."""
+
+    @patch("version_checker.utils.platform_utils.get_platform_patterns")
+    def test_match_with_pattern(self, mock_patterns):
+        """Test matching asset with platform pattern."""
+        mock_patterns.return_value = ["linux_amd64", "linux-amd64"]
+
+        score = match_asset_to_platform("myapp_linux_amd64.tar.gz")
+
+        assert score == 10
+
+    @patch("version_checker.utils.platform_utils.get_platform_patterns")
+    def test_match_no_pattern(self, mock_patterns):
+        """Test asset with no matching pattern returns 0."""
+        mock_patterns.return_value = ["linux_amd64", "linux-amd64"]
+
+        score = match_asset_to_platform("myapp_windows_x64.zip")
+
+        assert score == 0
+
+    @patch("version_checker.utils.platform_utils.get_platform_patterns")
+    def test_match_with_package_type_bonus(self, mock_patterns):
+        """Test matching asset gets package type bonus."""
+        mock_patterns.return_value = ["linux_amd64"]
+
+        score = match_asset_to_platform("myapp_linux_amd64.tar.gz", ".tar.gz")
+
+        assert score == 15  # 10 for pattern + 5 for package type
+
+    @patch("version_checker.utils.platform_utils.get_platform_patterns")
+    def test_match_case_insensitive(self, mock_patterns):
+        """Test matching is case insensitive."""
+        mock_patterns.return_value = ["linux_amd64"]
+
+        score = match_asset_to_platform("MyApp_LINUX_AMD64.tar.gz")
+
+        assert score == 10
+
+
+class TestFindBestAsset:
+    """Test cases for find_best_asset function."""
+
+    def test_find_best_asset_empty_list(self):
+        """Test find_best_asset with empty list returns None."""
+        result = find_best_asset([])
+
+        assert result is None
+
+    @patch("version_checker.utils.platform_utils.match_asset_to_platform")
+    def test_find_best_asset_with_match(self, mock_match):
+        """Test find_best_asset returns best matching asset."""
+        mock_match.side_effect = [0, 10, 5]  # Second asset has best score
+
+        assets = [
+            {"name": "app_darwin.zip", "browser_download_url": "url1"},
+            {"name": "app_linux_amd64.tar.gz", "browser_download_url": "url2"},
+            {"name": "app_linux.tar.gz", "browser_download_url": "url3"},
+        ]
+
+        result = find_best_asset(assets)
+
+        assert result == assets[1]
+
+    @patch("version_checker.utils.platform_utils.match_asset_to_platform")
+    def test_find_best_asset_no_match(self, mock_match):
+        """Test find_best_asset returns None when no matches."""
+        mock_match.return_value = 0
+
+        assets = [
+            {"name": "app_darwin.zip", "browser_download_url": "url1"},
+        ]
+
+        result = find_best_asset(assets)
+
+        assert result is None
+
+    @patch("version_checker.utils.platform_utils.match_asset_to_platform")
+    def test_find_best_asset_with_package_type(self, mock_match):
+        """Test find_best_asset respects package_type preference."""
+        mock_match.side_effect = [10, 15]  # Second has package type bonus
+
+        assets = [
+            {"name": "app_linux_amd64.zip", "browser_download_url": "url1"},
+            {"name": "app_linux_amd64.tar.gz", "browser_download_url": "url2"},
+        ]
+
+        result = find_best_asset(assets, ".tar.gz")
+
+        assert result == assets[1]

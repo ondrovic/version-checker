@@ -69,17 +69,35 @@ def load_config(
             # Compose configuration with overrides
             cfg = compose(config_name=config_file.stem, overrides=overrides)
 
-            # Validate required fields
-            required_fields = ["site_url", "file_path", "css_selector"]
-            for field in required_fields:
-                if field not in cfg or cfg[field] is None:
-                    raise ConfigError(f"Missing required field in config: {field}")
+            # Validate required fields - file_path is always required
+            if "file_path" not in cfg or cfg["file_path"] is None:
+                raise ConfigError("Missing required field in config: file_path")
+
+            # Get update_type (defaults to "scrape" for backward compatibility)
+            update_type = cfg.get("update_type", "scrape")
+
+            # Validate provider-specific required fields
+            if update_type == "scrape":
+                for field in ["site_url", "css_selector"]:
+                    if field not in cfg or cfg[field] is None:
+                        raise ConfigError(f"Missing required field for scrape provider: {field}")
+            elif update_type == "github":
+                if "github_repo" not in cfg or cfg["github_repo"] is None:
+                    raise ConfigError("Missing required field for github provider: github_repo")
+            else:
+                raise ConfigError(f"Invalid update_type: {update_type}. Must be 'scrape' or 'github'")
 
             # Set defaults for optional fields (if not present) using OmegaConf.merge
             defaults = {
                 "detailed_info": False,
                 "timeout": 10,
                 "base_download_url": None,
+                "update_type": "scrape",
+                "github_repo": None,
+                "version_pattern": None,
+                "default_package_type": None,
+                "site_url": None,
+                "css_selector": None,
             }
 
             # Only add missing defaults

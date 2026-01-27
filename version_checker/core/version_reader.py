@@ -226,6 +226,35 @@ class VersionReader:
         except (subprocess.CalledProcessError, FileNotFoundError):
             return None
 
+    def _version_from_pacman(self, package_name: str) -> Optional[str]:
+        """
+        Get version from pacman package manager (Arch Linux).
+
+        Args:
+            package_name: Name of the package to query.
+
+        Returns:
+            Version string with 'v' prefix or None if not found.
+        """
+        try:
+            result = subprocess.run(
+                ["pacman", "-Q", package_name],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+                check=True,
+            )
+            # Output format: "heroic 2.19.0-1"
+            parts = result.stdout.strip().split()
+            if len(parts) >= 2:
+                version = parts[1]
+                # Remove package release suffix (e.g., "-1" from "2.19.0-1")
+                version = version.rsplit("-", 1)[0] if "-" in version else version
+                return f"v{version}" if version else None
+            return None
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            return None
+
     def _extract_main_version_from_binary(self, file_path: str) -> Optional[str]:
         """
         Extract main.version from a binary using `strings` command.
@@ -264,7 +293,8 @@ class VersionReader:
         """
         Get version on Linux systems.
 
-        Tries dpkg first, then falls back to extracting main.version from binary.
+        Tries package managers (dpkg, pacman) first, then falls back to
+        extracting main.version from binary.
 
         Args:
             file_path: Path to executable or app name.
@@ -275,19 +305,36 @@ class VersionReader:
         path = Path(file_path).expanduser()
         resolved_path = str(path)
 
+        # Get app name for package manager queries
+        app_name = path.name if path.parent != Path(".") else file_path
+
         # If it's an explicit file path that exists
         if path.is_file() and os.access(resolved_path, os.X_OK):
-            # Try extracting version from binary
+            # Try extracting version from binary first
             version = self._extract_main_version_from_binary(resolved_path)
             if version:
                 return version
+
+            # Try package managers using the binary name
+            version = self._version_from_dpkg(app_name)
+            if version:
+                return version
+
+            version = self._version_from_pacman(app_name)
+            if version:
+                return version
+
             return None
 
-        # Otherwise treat as app name
-        app_name = path.name if path.parent != Path(".") else file_path
+        # Otherwise treat as app name and try package managers
 
-        # Try dpkg first
+        # Try dpkg first (Debian/Ubuntu)
         version = self._version_from_dpkg(app_name)
+        if version:
+            return version
+
+        # Try pacman (Arch Linux)
+        version = self._version_from_pacman(app_name)
         if version:
             return version
 
@@ -300,6 +347,24 @@ class VersionReader:
 
         return None
 
+    def _get_cache_dir(self) -> Path:
+        """
+        Get the cache directory for version information.
+
+        Returns:
+            Path to the cache directory (~/.cache/version-checker/).
+        """
+        # Use XDG_CACHE_HOME if set, otherwise ~/.cache
+        xdg_cache = os.environ.get("XDG_CACHE_HOME")
+        if xdg_cache:
+            cache_base = Path(xdg_cache)
+        else:
+            cache_base = Path.home() / ".cache"
+
+        cache_dir = cache_base / "version-checker"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        return cache_dir
+
     def _get_cache_path(self, file_path: str) -> Path:
         """
         Get the cache file path for a given executable.
@@ -308,17 +373,18 @@ class VersionReader:
             file_path: Path to the executable file.
 
         Returns:
-            Path to the cache file in the same directory as the executable.
+            Path to the cache file in the user's cache directory.
         """
-        # Get the directory and filename of the original executable
-        exec_path = Path(file_path).expanduser()
-        exec_dir = exec_path.parent
-        exec_name = exec_path.name
+        import hashlib
 
-        # Create cache filename by adding .cached extension
-        cache_filename = f"{exec_name}.cached"
+        # Get the resolved path and create a unique cache filename
+        exec_path = Path(file_path).expanduser().resolve()
 
-        return exec_dir / cache_filename
+        # Use hash of full path to avoid filename collisions
+        path_hash = hashlib.md5(str(exec_path).encode()).hexdigest()[:12]
+        cache_filename = f"{exec_path.name}_{path_hash}.json"
+
+        return self._get_cache_dir() / cache_filename
 
     def _get_cached_version(self, file_path: str) -> Optional[str]:
         """
@@ -380,12 +446,16 @@ class VersionReader:
             print(f"Warning: Could not save cache: {e}")
 
     def clear_cache(self) -> None:
-        """Clear all cache files."""
-        # Cache files are now stored next to executables
-        # This method would need a list of known executable paths to clear their caches
-        print(
-            "Cache files are now stored next to executables. Use clear_cache_for_file() to clear specific caches."
-        )
+        """Clear all cache files from the cache directory."""
+        try:
+            cache_dir = self._get_cache_dir()
+            count = 0
+            for cache_file in cache_dir.glob("*.json"):
+                cache_file.unlink()
+                count += 1
+            print(f"Cleared {count} cache file(s) from {cache_dir}")
+        except Exception as e:
+            print(f"Warning: Could not clear cache: {e}")
 
     def clear_cache_for_file(self, file_path: str) -> None:
         """

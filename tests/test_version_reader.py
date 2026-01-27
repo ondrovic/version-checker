@@ -329,8 +329,10 @@ class TestVersionReader:
         reader = VersionReader()
         cache_path = reader._get_cache_path(mock_exe_file)
 
-        assert cache_path.name == Path(mock_exe_file).name + ".cached"
-        assert cache_path.parent == Path(mock_exe_file).parent
+        # Cache files are now stored in ~/.cache/version-checker/ with format {name}_{hash}.json
+        assert cache_path.name.startswith(Path(mock_exe_file).name)
+        assert cache_path.name.endswith(".json")
+        assert "version-checker" in str(cache_path.parent)
 
     def test_save_and_load_cached_version(
         self, temp_dir: Path, mock_exe_file: str

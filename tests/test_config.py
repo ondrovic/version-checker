@@ -6,11 +6,14 @@ from pathlib import Path
 import pytest
 from omegaconf import DictConfig
 
+from unittest.mock import patch
+
 from version_checker.core.config import (
     ConfigError,
     create_example_config,
     get_config_as_dict,
     load_config,
+    select_config_file,
 )
 from version_checker.utils.helpers import get_config_dir
 
@@ -284,3 +287,128 @@ class TestConfigValidation:
             load_config(str(config_file))
 
         assert "css_selector" in str(exc_info.value).lower()
+
+
+class TestSelectConfigFile:
+    """Test cases for config file selection functionality."""
+
+    def test_select_config_file_empty_list(self):
+        """Test select_config_file returns None for empty list."""
+        result = select_config_file([])
+
+        assert result is None
+
+    def test_select_config_file_valid_selection(self, temp_dir):
+        """Test select_config_file with valid user selection."""
+        file1 = temp_dir / "app1.yaml"
+        file2 = temp_dir / "app2.yaml"
+        file1.touch()
+        file2.touch()
+
+        with patch("version_checker.core.config.questionary.select") as mock_select:
+            mock_select.return_value.ask.return_value = "app1.yaml"
+            result = select_config_file([file1, file2])
+
+        assert result == file1
+
+    def test_select_config_file_second_option(self, temp_dir):
+        """Test select_config_file selecting second option."""
+        file1 = temp_dir / "app1.yaml"
+        file2 = temp_dir / "app2.yaml"
+        file1.touch()
+        file2.touch()
+
+        with patch("version_checker.core.config.questionary.select") as mock_select:
+            mock_select.return_value.ask.return_value = "app2.yaml"
+            result = select_config_file([file1, file2])
+
+        assert result == file2
+
+    def test_select_config_file_cancel(self, temp_dir):
+        """Test select_config_file exits cleanly when user cancels."""
+        file1 = temp_dir / "app1.yaml"
+        file1.touch()
+
+        with patch("version_checker.core.config.questionary.select") as mock_select:
+            mock_select.return_value.ask.return_value = "Cancel"
+            with pytest.raises(SystemExit) as exc_info:
+                select_config_file([file1])
+
+        assert exc_info.value.code == 0
+
+    def test_select_config_file_keyboard_interrupt(self, temp_dir):
+        """Test select_config_file exits cleanly on keyboard interrupt."""
+        file1 = temp_dir / "app1.yaml"
+        file1.touch()
+
+        with patch("version_checker.core.config.questionary.select") as mock_select:
+            mock_select.return_value.ask.side_effect = KeyboardInterrupt
+            with pytest.raises(SystemExit) as exc_info:
+                select_config_file([file1])
+
+        assert exc_info.value.code == 0
+
+    def test_select_config_file_eof_error(self, temp_dir):
+        """Test select_config_file exits cleanly on EOF error."""
+        file1 = temp_dir / "app1.yaml"
+        file1.touch()
+
+        with patch("version_checker.core.config.questionary.select") as mock_select:
+            mock_select.return_value.ask.side_effect = EOFError
+            with pytest.raises(SystemExit) as exc_info:
+                select_config_file([file1])
+
+        assert exc_info.value.code == 0
+
+    def test_select_config_file_none_response(self, temp_dir):
+        """Test select_config_file exits cleanly on None response (Ctrl+C)."""
+        file1 = temp_dir / "app1.yaml"
+        file1.touch()
+
+        with patch("version_checker.core.config.questionary.select") as mock_select:
+            mock_select.return_value.ask.return_value = None
+            with pytest.raises(SystemExit) as exc_info:
+                select_config_file([file1])
+
+        assert exc_info.value.code == 0
+
+
+class TestConfigFallbackSelection:
+    """Test cases for config fallback selection when default is missing."""
+
+    def test_load_config_uses_selected_file(self, temp_dir, monkeypatch):
+        """Test load_config uses user-selected config when default missing."""
+        config_dir = temp_dir / "version-checker"
+        config_dir.mkdir(parents=True)
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(temp_dir))
+
+        # Create an alternative config (not config.yaml)
+        alt_config = config_dir / "myapp.yaml"
+        alt_config.write_text(
+            "site_url: 'https://alt.com'\n"
+            "file_path: '/alt/path'\n"
+            "css_selector: '.alt'\n"
+        )
+
+        with patch("version_checker.core.config.questionary.select") as mock_select:
+            mock_select.return_value.ask.return_value = "myapp.yaml"
+            cfg = load_config(None)
+
+        assert cfg.site_url == "https://alt.com"
+
+    def test_load_config_cancel_selection_exits_cleanly(self, temp_dir, monkeypatch):
+        """Test load_config exits cleanly when user cancels selection."""
+        config_dir = temp_dir / "version-checker"
+        config_dir.mkdir(parents=True)
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(temp_dir))
+
+        # Create an alternative config
+        alt_config = config_dir / "myapp.yaml"
+        alt_config.touch()
+
+        with patch("version_checker.core.config.questionary.select") as mock_select:
+            mock_select.return_value.ask.return_value = "Cancel"
+            with pytest.raises(SystemExit) as exc_info:
+                load_config(None)
+
+        assert exc_info.value.code == 0

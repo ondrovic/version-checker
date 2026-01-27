@@ -104,6 +104,10 @@ class TestCoverageGap:
                 "version_checker.core.config.get_default_config_path",
                 return_value=config_file,
             ),
+            patch(
+                "version_checker.core.config.find_yaml_configs",
+                return_value=[],  # No alternative configs available
+            ),
         ):
             with pytest.raises(ConfigError, match="Configuration file not found"):
                 load_config(None)

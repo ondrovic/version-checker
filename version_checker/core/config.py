@@ -1,19 +1,92 @@
 """Configuration management for version checker using Hydra."""
 
+import sys
+import time
 from pathlib import Path
 from typing import Any, List, Optional
 
+import questionary
 from hydra import compose, initialize_config_dir
 from hydra.core.global_hydra import GlobalHydra
 from omegaconf import DictConfig, OmegaConf
+from questionary import Style
+from rich.console import Console
 
-from version_checker.utils.helpers import get_config_dir, get_default_config_path
+from version_checker.utils.helpers import (
+    clear_screen,
+    find_yaml_configs,
+    get_config_dir,
+    get_default_config_path,
+)
+
+console = Console()
+
+# Custom style for questionary to match rich aesthetics
+MENU_STYLE = Style(
+    [
+        ("qmark", "fg:yellow bold"),
+        ("question", "fg:yellow bold"),
+        ("answer", "fg:green bold"),
+        ("pointer", "fg:cyan bold"),
+        ("highlighted", "fg:cyan bold"),
+        ("selected", "fg:green"),
+        ("instruction", "fg:gray"),
+    ]
+)
 
 
 class ConfigError(Exception):
     """Raised when there's an error with configuration."""
 
     pass
+
+
+def select_config_file(yaml_files: list[Path]) -> Optional[Path]:
+    """
+    Prompt user to select a configuration file from available options.
+
+    Uses arrow keys for navigation.
+
+    Args:
+        yaml_files: List of available YAML config file paths.
+
+    Returns:
+        Selected Path, or None if user cancels.
+    """
+    if not yaml_files:
+        return None
+
+    # Build choices for questionary
+    choices = [file_path.name for file_path in yaml_files]
+    choices.append("Cancel")
+
+    console.print()
+    console.print("[dim]config.yaml not found[/dim]")
+    console.print()
+
+    try:
+        answer = questionary.select(
+            "Select configuration file:",
+            choices=choices,
+            style=MENU_STYLE,
+            instruction="(Use arrow keys)",
+            pointer="❯",
+        ).ask()
+
+        if answer is None or answer == "Cancel":
+            console.print("[dim]Cancelled[/dim]")
+            sys.exit(0)
+
+        # Find the selected file
+        selected = next(f for f in yaml_files if f.name == answer)
+        console.print(f"\n[green]✓[/green] Using: [bold]{selected.name}[/bold]")
+        time.sleep(0.5)  # Brief pause to show selection
+        clear_screen()
+        return selected
+
+    except (KeyboardInterrupt, EOFError):
+        console.print("\n[dim]Cancelled[/dim]")
+        sys.exit(0)
 
 
 def load_config(
@@ -41,6 +114,16 @@ def load_config(
         # Use default config location
         config_dir = get_config_dir()
         config_file = get_default_config_path()
+
+        # If default config doesn't exist, check for other YAML files
+        if not config_file.exists():
+            available_configs = find_yaml_configs()
+            if available_configs:
+                selected = select_config_file(available_configs)
+                if selected is None:
+                    raise ConfigError("No configuration file selected.")
+                config_file = selected
+                config_dir = config_file.parent
     else:
         # Use provided path
         config_file = Path(config_path)

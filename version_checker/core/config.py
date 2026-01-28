@@ -89,6 +89,48 @@ def select_config_file(yaml_files: list[Path]) -> Optional[Path]:
         sys.exit(0)
 
 
+def resolve_config_path(config_path: Optional[str] = None) -> Path:
+    """
+    Resolve the configuration file path with auto-selection support.
+
+    If no config_path is provided and the default config.yaml doesn't exist,
+    prompts the user to select from available YAML configs in the config directory.
+
+    Args:
+        config_path: Optional explicit path to config file.
+
+    Returns:
+        Path to the resolved configuration file.
+
+    Raises:
+        ConfigError: If no configuration file is found or selected.
+    """
+    if config_path is not None:
+        # Use provided path
+        resolved = Path(config_path)
+        if not resolved.exists():
+            raise ConfigError(f"Configuration file not found: {config_path}")
+        return resolved
+
+    # Use default config location
+    config_file = get_default_config_path()
+
+    # If default config doesn't exist, check for other YAML files
+    if not config_file.exists():
+        available_configs = find_yaml_configs()
+        if available_configs:
+            selected = select_config_file(available_configs)
+            if selected is None:  # pragma: no cover
+                raise ConfigError("No configuration file selected.")
+            return selected
+        else:
+            raise ConfigError(
+                f"No configuration file found. Expected: {config_file}"
+            )
+
+    return config_file
+
+
 def load_config(
     config_path: Optional[str] = None, overrides: Optional[List[str]] = None
 ) -> DictConfig:
@@ -109,37 +151,16 @@ def load_config(
     if overrides is None:
         overrides = []
 
-    # Determine config directory
-    if config_path is None:
-        # Use default config location
-        config_dir = get_config_dir()
-        config_file = get_default_config_path()
-
-        # If default config doesn't exist, check for other YAML files
-        if not config_file.exists():
-            available_configs = find_yaml_configs()
-            if available_configs:
-                selected = select_config_file(available_configs)
-                if selected is None:  # pragma: no cover
-                    raise ConfigError("No configuration file selected.")
-                config_file = selected
-                config_dir = config_file.parent
-    else:
-        # Use provided path
-        config_file = Path(config_path)
-        if not config_file.exists():
-            raise ConfigError(f"Configuration file not found: {config_path}")
-        config_dir = config_file.parent
+    # Resolve config file path (handles auto-selection if needed)
+    config_file = resolve_config_path(config_path)
+    config_dir = config_file.parent
 
     # Ensure config directory exists
     config_dir.mkdir(parents=True, exist_ok=True)
 
     # Check if config file exists
     if not config_file.exists():
-        raise ConfigError(
-            f"Configuration file not found: {config_file}\n"
-            f"Run 'version-checker --create-example' to create a sample configuration file."
-        )
+        raise ConfigError(f"Configuration file not found: {config_file}")
 
     try:
         # Clear any existing Hydra instance
@@ -181,6 +202,7 @@ def load_config(
                 "default_package_type": None,
                 "site_url": None,
                 "css_selector": None,
+                "auto_install": False,
             }
 
             # Only add missing defaults
@@ -196,64 +218,6 @@ def load_config(
         if isinstance(e, ConfigError):
             raise
         raise ConfigError(f"Error loading config: {e}")
-
-
-def create_example_config(path: Optional[str] = None) -> None:
-    """
-    Create an example configuration file.
-
-    Args:
-        path: Optional path for the example file. If None, creates in default location.
-    """
-    example_config_content = """# Version Checker Configuration File
-# Copy this file to config.yaml and customize for your needs
-
-# Required: URL to scrape for the latest version
-site_url: "https://example.com/software"
-
-# Required: Base URL for downloading the latest version
-# The architecture and OS will be automatically detected and appended
-# Example: "https://cos.olived.app/d/OlivedPro_" will become
-#          "https://cos.olived.app/d/OlivedPro_0.23.4_windows_x64.zip"
-base_download_url: "https://example.com/downloads/Software_"
-
-# Required: Path to the installed executable
-file_path: "C:/Program Files/Software/software.exe"
-
-# Optional: Show detailed JSON output (default: false)
-detailed_info: false
-
-# Optional: HTTP request timeout in seconds (default: 10)
-timeout: 10
-
-# Optional: Custom CSS selector for the version element on the webpage
-# If not specified, uses the default selector
-css_selector: "body > nav > div > div > div.hidden.flex-1.items-center.justify-center.md\\\\:flex > a:nth-child(6)"
-
-# Examples of other CSS selectors you might use:
-# css_selector: ".version-number"
-# css_selector: "#latest-version"
-# css_selector: "[data-version]"
-# css_selector: "h1.release-title"
-# css_selector: ".download-link:first-child"
-
-# Future options (not yet implemented):
-# version_regex: "v?(\\\\d+\\\\.\\\\d+\\\\.\\\\d+)"  # Custom regex to extract version
-# user_agent: "Mozilla/5.0..."  # Custom user agent string
-"""
-
-    if path is None:
-        # Create in default location
-        config_dir = get_config_dir()
-        config_dir.mkdir(parents=True, exist_ok=True)
-        target_path = config_dir / "config.yaml.example"
-    else:
-        target_path = Path(path)
-
-    with open(target_path, "w", encoding="utf-8") as file:
-        file.write(example_config_content)
-
-    print(f"Example configuration created at: {target_path}")
 
 
 def get_config_as_dict(cfg: DictConfig) -> dict[str, Any]:

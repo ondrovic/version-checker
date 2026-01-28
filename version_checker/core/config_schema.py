@@ -18,6 +18,8 @@ class VersionCheckerConfig:
         base_download_url: Base URL for constructing download URLs (optional).
         detailed_info: Show detailed JSON output (default: False).
         timeout: HTTP request timeout in seconds (default: 10).
+        auto_launch: Auto-launch app after installation (default: False).
+        process_name: Process name to kill before update (optional, defaults to file_path stem).
     """
 
     # Required fields
@@ -29,6 +31,8 @@ class VersionCheckerConfig:
     base_download_url: Optional[str] = None
     detailed_info: bool = False
     timeout: int = 10
+    auto_launch: bool = False
+    process_name: Optional[str] = None
 
 
 def register_configs() -> None:

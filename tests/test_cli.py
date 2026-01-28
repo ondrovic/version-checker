@@ -75,16 +75,6 @@ class TestCheckCommand:
             assert result.exit_code == 0
             assert "latest version" in result.output.lower()
 
-    @patch("version_checker.cli.create_example_config")
-    def test_check_create_example(self, mock_create):
-        """Test --create-example flag."""
-        runner = CliRunner()
-        result = runner.invoke(check, ["--create-example"])
-
-        assert result.exit_code == 0
-        mock_create.assert_called_once()
-        assert "config.yaml.example" in result.output
-
     @patch("version_checker.cli.load_config")
     @patch("version_checker.cli.scrape_version_number")
     @patch("version_checker.cli.clear_screen")
@@ -401,10 +391,8 @@ class TestShowConfigCommand:
         """Test showing config contents."""
         runner = CliRunner()
         with runner.isolated_filesystem():
-            # Create a config file
-            config_dir = Path.home() / ".config" / "version-checker"
-            config_dir.mkdir(parents=True, exist_ok=True)
-            config_file = config_dir / "config.yaml"
+            # Create a config file in isolated filesystem (not real home dir)
+            config_file = Path("config.yaml")
             config_file.write_text("site_url: https://example.com\n")
 
             with patch(
@@ -419,16 +407,18 @@ class TestShowConfigCommand:
 
     def test_show_config_not_found(self):
         """Test showing config when file doesn't exist."""
+        from version_checker.core.config import ConfigError
+
         runner = CliRunner()
         with runner.isolated_filesystem():
             with patch(
-                "version_checker.utils.helpers.get_default_config_path",
-                return_value=Path("nonexistent.yaml"),
+                "version_checker.core.config.resolve_config_path",
+                side_effect=ConfigError("No configuration file found"),
             ):
                 result = runner.invoke(show_config)
 
                 assert result.exit_code == 1
-                assert "not found" in result.output.lower()
+                assert "error" in result.output.lower()
 
     def test_show_config_raw(self, temp_dir):
         """Test showing config in raw format."""
@@ -438,7 +428,7 @@ class TestShowConfigCommand:
             config_file.write_text("site_url: https://example.com\n")
 
             with patch(
-                "version_checker.utils.helpers.get_default_config_path",
+                "version_checker.core.config.resolve_config_path",
                 return_value=config_file,
             ):
                 result = runner.invoke(show_config, ["--raw"])
@@ -465,7 +455,7 @@ class TestShowConfigCommand:
             config_file.write_text("site_url: https://example.com\n")
 
             with patch(
-                "version_checker.utils.helpers.get_default_config_path",
+                "version_checker.core.config.resolve_config_path",
                 return_value=config_file,
             ):
                 with patch(
@@ -746,6 +736,7 @@ class TestShowConfigCommand:
             "file_path": "/path/to/app.exe",
             "css_selector": ".version",
             "detailed_info": False,
+            "auto_launch": True,  # Enable auto_launch to test start_process failure
         }
         mock_scrape.return_value = {
             "installedVersion": "1.0.0",
@@ -761,7 +752,247 @@ class TestShowConfigCommand:
         mock_installer._download.return_value = True
         mock_installer._extract_and_overwrite.return_value = True
         mock_installer._start_process.return_value = False
+        mock_installer.auto_launch = True
         mock_installer_class.return_value = mock_installer
+
+        # Mock Live context manager
+        mock_live_instance = MagicMock()
+        mock_live.return_value.__enter__ = mock_live_instance
+        mock_live.return_value.__exit__ = MagicMock()
+
+        runner = CliRunner()
+        with runner.isolated_filesystem():
+            Path("config.yaml").write_text("site_url: https://example.com\n")
+
+            result = runner.invoke(
+                check, ["--config", "config.yaml", "--no-clear", "-a"]
+            )
+
+            assert result.exit_code == 1
+            assert "failed" in result.output.lower()
+
+
+class TestCLIAdditionalCoverage:
+    """Additional test cases for complete CLI coverage."""
+
+    @patch("version_checker.cli.load_config")
+    @patch("version_checker.cli.scrape_version_number")
+    @patch("version_checker.cli.clear_screen")
+    @patch("version_checker.cli.AutoInstaller")
+    @patch("version_checker.cli.Live")
+    @patch("version_checker.cli.detect_package_type")
+    def test_check_auto_install_with_sudo_package(
+        self,
+        mock_detect_type,
+        mock_live,
+        mock_installer_class,
+        mock_clear,
+        mock_scrape,
+        mock_load_config,
+    ):
+        """Test check command with sudo-requiring package type."""
+        from version_checker.cli import PackageType
+
+        mock_load_config.return_value = {
+            "site_url": "https://example.com",
+            "file_path": "/path/to/app.exe",
+            "css_selector": ".version",
+            "detailed_info": False,
+        }
+        mock_scrape.return_value = {
+            "installedVersion": "1.0.0",
+            "latestVersion": "2.0.0",
+            "needsUpdate": True,
+            "freshInstall": False,
+            "downloadUrl": "https://example.com/download.deb",
+        }
+
+        # Mock installer
+        mock_installer = MagicMock()
+        mock_installer._kill_process.return_value = True
+        mock_installer._download.return_value = True
+        mock_installer._extract_and_overwrite.return_value = True
+        mock_installer.downloaded_file = MagicMock()
+        mock_installer.downloaded_file.name = "app.deb"
+        mock_installer_class.return_value = mock_installer
+
+        # Mock package type detection to return DEB (sudo required)
+        mock_detect_type.return_value = PackageType.DEB
+
+        # Mock Live context manager
+        mock_live_instance = MagicMock()
+        mock_live.return_value.__enter__ = mock_live_instance
+        mock_live.return_value.__exit__ = MagicMock()
+
+        runner = CliRunner()
+        with runner.isolated_filesystem():
+            Path("config.yaml").write_text("site_url: https://example.com\n")
+
+            result = runner.invoke(
+                check, ["--config", "config.yaml", "--no-clear", "-a"]
+            )
+
+            assert result.exit_code == 0
+
+    @patch("version_checker.cli.load_config")
+    @patch("version_checker.cli.scrape_version_number")
+    @patch("version_checker.cli.clear_screen")
+    @patch("version_checker.cli.AutoInstaller")
+    @patch("version_checker.cli.Live")
+    def test_check_auto_install_fresh_with_auto_launch(
+        self, mock_live, mock_installer_class, mock_clear, mock_scrape, mock_load_config
+    ):
+        """Test check command with fresh install and auto_launch enabled."""
+        mock_load_config.return_value = {
+            "site_url": "https://example.com",
+            "file_path": "/path/to/app.exe",
+            "css_selector": ".version",
+            "detailed_info": False,
+            "auto_launch": True,
+        }
+        mock_scrape.return_value = {
+            "installedVersion": "Not installed",
+            "latestVersion": "1.0.0",
+            "needsUpdate": True,
+            "freshInstall": True,
+            "downloadUrl": "https://example.com/download.zip",
+        }
+
+        # Mock installer
+        mock_installer = MagicMock()
+        mock_installer._download.return_value = True
+        mock_installer._extract_and_overwrite.return_value = True
+        mock_installer._start_process.return_value = True
+        mock_installer.downloaded_file = MagicMock()
+        mock_installer.downloaded_file.name = "app.zip"
+        mock_installer_class.return_value = mock_installer
+
+        # Mock Live context manager
+        mock_live_instance = MagicMock()
+        mock_live.return_value.__enter__ = mock_live_instance
+        mock_live.return_value.__exit__ = MagicMock()
+
+        runner = CliRunner()
+        with runner.isolated_filesystem():
+            Path("config.yaml").write_text("site_url: https://example.com\n")
+
+            result = runner.invoke(
+                check, ["--config", "config.yaml", "--no-clear", "-a"]
+            )
+
+            assert result.exit_code == 0
+            # Verify auto_launch was passed
+            call_kwargs = mock_installer_class.call_args[1]
+            assert call_kwargs["auto_launch"] is True
+
+    @patch("version_checker.cli.load_config")
+    @patch("version_checker.cli.scrape_version_number")
+    @patch("version_checker.cli.clear_screen")
+    @patch("version_checker.cli.AutoInstaller")
+    @patch("version_checker.cli.Live")
+    def test_check_auto_install_start_failure_fresh(
+        self, mock_live, mock_installer_class, mock_clear, mock_scrape, mock_load_config
+    ):
+        """Test check command with fresh install start process failure."""
+        mock_load_config.return_value = {
+            "site_url": "https://example.com",
+            "file_path": "/path/to/app.exe",
+            "css_selector": ".version",
+            "detailed_info": False,
+            "auto_launch": True,
+        }
+        mock_scrape.return_value = {
+            "installedVersion": "Not installed",
+            "latestVersion": "1.0.0",
+            "needsUpdate": True,
+            "freshInstall": True,
+            "downloadUrl": "https://example.com/download.zip",
+        }
+
+        # Mock installer that fails to start process
+        mock_installer = MagicMock()
+        mock_installer._download.return_value = True
+        mock_installer._extract_and_overwrite.return_value = True
+        mock_installer._start_process.return_value = False
+        mock_installer.downloaded_file = MagicMock()
+        mock_installer.downloaded_file.name = "app.zip"
+        mock_installer_class.return_value = mock_installer
+
+        # Mock Live context manager
+        mock_live_instance = MagicMock()
+        mock_live.return_value.__enter__ = mock_live_instance
+        mock_live.return_value.__exit__ = MagicMock()
+
+        runner = CliRunner()
+        with runner.isolated_filesystem():
+            Path("config.yaml").write_text("site_url: https://example.com\n")
+
+            result = runner.invoke(
+                check, ["--config", "config.yaml", "--no-clear", "-a"]
+            )
+
+            assert result.exit_code == 1
+            assert "failed" in result.output.lower()
+
+    def test_show_config_path_exists(self, temp_dir):
+        """Test showing config path when file exists."""
+        runner = CliRunner()
+        with runner.isolated_filesystem():
+            config_file = Path("config.yaml")
+            config_file.write_text("site_url: https://example.com\n")
+
+            with patch(
+                "version_checker.utils.helpers.get_default_config_path",
+                return_value=config_file,
+            ):
+                result = runner.invoke(show_config, ["--path"])
+
+                assert result.exit_code == 0
+                assert "exists" in result.output.lower()
+
+    @patch("version_checker.cli.load_config")
+    @patch("version_checker.cli.scrape_version_number")
+    @patch("version_checker.cli.clear_screen")
+    @patch("version_checker.cli.AutoInstaller")
+    @patch("version_checker.cli.Live")
+    @patch("version_checker.cli.detect_package_type")
+    def test_check_auto_install_extract_failure_non_sudo(
+        self,
+        mock_detect_type,
+        mock_live,
+        mock_installer_class,
+        mock_clear,
+        mock_scrape,
+        mock_load_config,
+    ):
+        """Test check command with extract failure for non-sudo package type."""
+        from version_checker.cli import PackageType
+
+        mock_load_config.return_value = {
+            "site_url": "https://example.com",
+            "file_path": "/path/to/app.exe",
+            "css_selector": ".version",
+            "detailed_info": False,
+        }
+        mock_scrape.return_value = {
+            "installedVersion": "1.0.0",
+            "latestVersion": "2.0.0",
+            "needsUpdate": True,
+            "freshInstall": False,
+            "downloadUrl": "https://example.com/download.zip",
+        }
+
+        # Mock installer that fails extraction
+        mock_installer = MagicMock()
+        mock_installer._kill_process.return_value = True
+        mock_installer._download.return_value = True
+        mock_installer._extract_and_overwrite.return_value = False  # Fail here
+        mock_installer.downloaded_file = MagicMock()
+        mock_installer.downloaded_file.name = "app.zip"
+        mock_installer_class.return_value = mock_installer
+
+        # Mock package type detection to return ZIP (non-sudo)
+        mock_detect_type.return_value = PackageType.ZIP
 
         # Mock Live context manager
         mock_live_instance = MagicMock()

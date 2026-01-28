@@ -142,9 +142,9 @@ poetry.lock
 *~
 
 # Claude Code / AI assistants
-.claude/
-.auto-claude/
-
+.claude/ 
+.auto-claude/ 
+.omc/
 # Automation tools
 .zencoder/
 .zenflow/

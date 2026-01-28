@@ -55,8 +55,21 @@ base_download_url: "https://example.com/downloads/Software_"
 # Optional: Show detailed JSON output (default: false)
 detailed_info: false
 
+# Optional: Automatically install updates when available (default: false)
+# When true, behaves like passing --auto-install / -a flag
+auto_install: false
+
 # Optional: HTTP request timeout in seconds (default: 10)
 timeout: 10
+
+# Optional: Auto-launch the application after installation (default: false)
+# When true, the app will be started automatically after update/install
+auto_launch: false
+
+# Optional: Process name to kill before updating (default: derived from file_path)
+# Use this if the process name differs from the executable name
+# Example: file_path is "/usr/bin/heroic" but process is "heroic-run"
+# process_name: "heroic-run"
 
 # ==============================================================================
 # EXAMPLE CONFIGURATIONS

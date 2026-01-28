@@ -1,9 +1,9 @@
 [project]
 name = "version-checker"
-version = "0.1.0"
-description = "A tool to check for software updates by comparing installed executable versions with web-scraped latest versions"
+version = "1.0.0"
+description = "A tool to check for software updates that are installed unconventionally"
 authors = [
-    {name = "Your Name", email = "your.email@example.com"}
+    {name = "Chris Ondrovic", email = "ondrovic@gmail.com"}
 ]
 readme = "README.md"
 license = {text = "MIT"}

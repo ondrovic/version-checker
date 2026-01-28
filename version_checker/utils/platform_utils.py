@@ -1,6 +1,8 @@
 """Platform detection utilities for building OS-specific download URLs."""
 
 import platform
+import shutil
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 
@@ -128,7 +130,8 @@ def get_platform_patterns() -> List[str]:
             patterns = [
                 "linux_amd64", "linux-amd64", "Linux_x86_64", "linux-x86_64",
                 "linux_x86_64", "x86_64-unknown-linux", "x86_64-linux",
-                "linux64", "Linux_amd64", "Linux-amd64"
+                "linux64", "Linux_amd64", "Linux-amd64",
+                "linux-x64", "linux_x64", "Linux-x64", "Linux_x64"
             ]
         elif arch == "arm64":
             patterns = [
@@ -226,3 +229,65 @@ def find_best_asset(
             best_asset = asset
 
     return best_asset
+
+
+def get_linux_distro() -> str:
+    """
+    Detect the Linux distribution family.
+
+    First tries to parse /etc/os-release, then falls back to checking
+    for package manager binaries.
+
+    Returns:
+        'debian' | 'arch' | 'fedora' | 'unknown'
+    """
+    # Only check on Linux
+    if platform.system().lower() != "linux":
+        return "unknown"
+
+    # Try to parse /etc/os-release
+    os_release_path = Path("/etc/os-release")
+    if os_release_path.exists():
+        try:
+            content = os_release_path.read_text()
+            os_info: Dict[str, str] = {}
+            for line in content.splitlines():
+                if "=" in line:
+                    key, _, value = line.partition("=")
+                    # Remove quotes from value
+                    os_info[key.strip()] = value.strip().strip('"').strip("'")
+
+            # Check ID and ID_LIKE for distribution family
+            distro_id = os_info.get("ID", "").lower()
+            id_like = os_info.get("ID_LIKE", "").lower()
+
+            # Debian-based (Debian, Ubuntu, Linux Mint, Pop!_OS, etc.)
+            if distro_id in ("debian", "ubuntu", "linuxmint", "pop", "elementary"):
+                return "debian"
+            if "debian" in id_like or "ubuntu" in id_like:
+                return "debian"
+
+            # Arch-based (Arch, Manjaro, EndeavourOS, etc.)
+            if distro_id in ("arch", "manjaro", "endeavouros", "cachyos", "garuda"):
+                return "arch"
+            if "arch" in id_like:
+                return "arch"
+
+            # Fedora/RHEL-based (Fedora, RHEL, CentOS, Rocky, Alma, etc.)
+            if distro_id in ("fedora", "rhel", "centos", "rocky", "almalinux"):
+                return "fedora"
+            if "fedora" in id_like or "rhel" in id_like:
+                return "fedora"
+
+        except (OSError, IOError):
+            pass
+
+    # Fallback: check for package manager binaries
+    if shutil.which("pacman"):
+        return "arch"
+    if shutil.which("apt") or shutil.which("dpkg"):
+        return "debian"
+    if shutil.which("dnf") or shutil.which("rpm"):
+        return "fedora"
+
+    return "unknown"

@@ -109,7 +109,7 @@ class TestCoverageGap:
                 return_value=[],  # No alternative configs available
             ),
         ):
-            with pytest.raises(ConfigError, match="Configuration file not found"):
+            with pytest.raises(ConfigError, match="No configuration file found"):
                 load_config(None)
 
     def test_get_config_as_dict_value_error(self) -> None:
@@ -311,11 +311,11 @@ class TestAdditionalCoverageGaps:
             result = installer._kill_process()
             assert result is True
 
-    def test_auto_installer_download_no_zip_extension(self, tmp_path: Path) -> None:
-        """Line 189 in auto_installer.py: Adding .zip extension."""
+    def test_auto_installer_download_preserves_original_filename(self, tmp_path: Path) -> None:
+        """Test that download preserves the original filename from URL."""
         installer = AutoInstaller(
             str(tmp_path / "app.exe"),
-            "http://example.com/download",  # No .zip extension
+            "http://example.com/download",  # No extension
             silent=True,
         )
         installer.downloads_dir = tmp_path
@@ -330,9 +330,9 @@ class TestAdditionalCoverageGaps:
         ):
             result = installer._download()
             assert result is True
-            # Check that .zip was added
+            # Original filename is preserved (no .zip added)
             assert installer.downloaded_file is not None
-            assert installer.downloaded_file.suffix == ".zip"
+            assert installer.downloaded_file.name == "download"
 
     def test_auto_installer_download_with_progress_callback(
         self, tmp_path: Path

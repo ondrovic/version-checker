@@ -63,6 +63,8 @@ class TestVersionCheckerConfig:
             "base_download_url",
             "detailed_info",
             "timeout",
+            "auto_launch",
+            "process_name",
         }
 
         assert field_names == expected_fields

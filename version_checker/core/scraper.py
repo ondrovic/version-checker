@@ -10,7 +10,7 @@ from omegaconf import DictConfig
 from packaging.version import parse
 
 from ..utils.platform_utils import build_download_url, find_best_asset
-from .version_reader import get_exe_version
+from .version_reader import VersionReader, get_exe_version
 
 
 class VersionScraper:
@@ -53,7 +53,21 @@ class VersionScraper:
         # Get installed version if executable exists
         current_installed_version = None
         if executable_exists:
-            installed_version_raw = get_exe_version(installed_exe_path)
+            installed_version_raw = None
+
+            # Prefer config-driven version probing when provided
+            version_probes = config.get("version_probes")
+            if version_probes:
+                reader = VersionReader(use_cache=False)
+                installed_version_raw = reader.get_version_from_probes(
+                    installed_exe_path,
+                    version_probes=version_probes,
+                    version_timeout=config.get("version_timeout", 2),
+                )
+
+            # Fall back to existing methods
+            if not installed_version_raw:
+                installed_version_raw = get_exe_version(installed_exe_path)
             if not installed_version_raw:
                 print("Warning: Could not read installed version")
                 return None
@@ -282,7 +296,21 @@ class VersionScraper:
         # Get installed version if executable exists
         current_installed_version = None
         if executable_exists:
-            installed_version_raw = get_exe_version(installed_exe_path)
+            installed_version_raw = None
+
+            # Prefer config-driven version probing when provided
+            version_probes = config.get("version_probes")
+            if version_probes:
+                reader = VersionReader(use_cache=False)
+                installed_version_raw = reader.get_version_from_probes(
+                    installed_exe_path,
+                    version_probes=version_probes,
+                    version_timeout=config.get("version_timeout", 2),
+                )
+
+            # Fall back to existing methods
+            if not installed_version_raw:
+                installed_version_raw = get_exe_version(installed_exe_path)
             if not installed_version_raw:
                 print("Warning: Could not read installed version")
                 return None

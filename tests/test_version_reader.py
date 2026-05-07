@@ -519,6 +519,66 @@ class TestVersionReader:
             # but the cache should work in production
 
 
+class TestVersionProbes:
+    """Test cases for config-driven version probing."""
+
+    def test_probe_extracts_from_stdout(self) -> None:
+        from version_checker.core.version_reader import VersionReader
+
+        reader = VersionReader(use_cache=False)
+        probes = [{"args": ["--version"], "regex": r"(\d+\.\d+\.\d+)"}]
+
+        with patch("pathlib.Path.exists", return_value=True):
+            with patch("version_checker.core.version_reader.subprocess.run") as mock_run:
+                mock_run.return_value = MagicMock(
+                    stdout="ollama version 1.2.3\n", stderr=""
+                )
+                assert (
+                    reader.get_version_from_probes(
+                        "/usr/local/bin/ollama", version_probes=probes, version_timeout=2
+                    )
+                    == "1.2.3"
+                )
+
+    def test_probe_extracts_from_stderr(self) -> None:
+        from version_checker.core.version_reader import VersionReader
+
+        reader = VersionReader(use_cache=False)
+        probes = [{"args": ["--version"], "regex": r"(\d+\.\d+\.\d+)"}]
+
+        with patch("pathlib.Path.exists", return_value=True):
+            with patch("version_checker.core.version_reader.subprocess.run") as mock_run:
+                mock_run.return_value = MagicMock(
+                    stdout="", stderr="ollama version 2.0.1\n"
+                )
+                assert (
+                    reader.get_version_from_probes(
+                        "/usr/local/bin/ollama", version_probes=probes, version_timeout=2
+                    )
+                    == "2.0.1"
+                )
+
+    def test_probe_timeout_returns_none(self) -> None:
+        from version_checker.core.version_reader import VersionReader
+
+        reader = VersionReader(use_cache=False)
+        probes = [{"args": ["--version"], "regex": r"(\d+\.\d+\.\d+)"}]
+
+        with patch("pathlib.Path.exists", return_value=True):
+            with patch("version_checker.core.version_reader.subprocess.run") as mock_run:
+                import subprocess as real_subprocess
+
+                mock_run.side_effect = real_subprocess.TimeoutExpired(
+                    cmd=["/usr/local/bin/ollama", "--version"], timeout=2
+                )
+                assert (
+                    reader.get_version_from_probes(
+                        "/usr/local/bin/ollama", version_probes=probes, version_timeout=2
+                    )
+                    is None
+                )
+
+
 class TestLinuxVersionMethods:
     """Test cases for Linux-specific version detection methods."""
 

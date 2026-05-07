@@ -13,6 +13,7 @@ from rich.table import Table
 from .core.config import ConfigError, load_config
 from .core.scraper import scrape_version_number
 from .utils.auto_installer import AutoInstaller, PackageType, detect_package_type
+from .utils.script_installer import run_install_script
 from .utils.helpers import clear_screen
 
 console = Console()
@@ -109,7 +110,15 @@ def check(
 
                 # Auto-install section - runs regardless of detailed_info
                 if auto_install_enabled:
-                    if "downloadUrl" not in result:
+                    install_method = config_data.get("install_method", "download")
+
+                    if install_method not in ("download", "script"):
+                        console.print(
+                            f"[red]Error:[/red] Invalid install_method: {install_method}"
+                        )
+                        sys.exit(1)
+
+                    if install_method == "download" and "downloadUrl" not in result:
                         console.print(
                             "[red]Error:[/red] Download URL not available for auto-install"
                         )
@@ -123,39 +132,41 @@ def check(
                     if is_fresh_install:
                         if auto_launch:
                             step_descriptions = [
-                                "Download the latest version",
-                                "Install to the configured location",
+                                "Download the latest version" if install_method == "download" else "Run install script",
+                                "Install to the configured location" if install_method == "download" else "Verify installation",
                                 "Start the application",
                                 "Clean up temporary files",
                             ]
                         else:
                             step_descriptions = [
-                                "Download the latest version",
-                                "Install to the configured location",
+                                "Download the latest version" if install_method == "download" else "Run install script",
+                                "Install to the configured location" if install_method == "download" else "Verify installation",
                                 "Clean up temporary files",
                             ]
                     else:
                         if auto_launch:
                             step_descriptions = [
                                 f"Stop any running {process_name} processes",
-                                "Download the new version",
-                                "Install to the configured location",
+                                "Download the new version" if install_method == "download" else "Run install script",
+                                "Install to the configured location" if install_method == "download" else "Verify installation",
                                 "Start the new version",
                                 "Clean up temporary files",
                             ]
                         else:
                             step_descriptions = [
                                 f"Stop any running {process_name} processes",
-                                "Download the new version",
-                                "Install to the configured location",
+                                "Download the new version" if install_method == "download" else "Run install script",
+                                "Install to the configured location" if install_method == "download" else "Verify installation",
                                 "Clean up temporary files",
                             ]
 
                     def create_display(step: int) -> Panel:
                         """Create the display for current step."""
-                        header = (
-                            f"[cyan]Download URL:[/cyan] {result['downloadUrl']}\n"
-                        )
+                        header = ""
+                        if install_method == "download":
+                            header = f"[cyan]Download URL:[/cyan] {result['downloadUrl']}\n"
+                        elif install_method == "script":
+                            header = "[cyan]Install method:[/cyan] script\n"
 
                         # Create steps table
                         steps_table = Table.grid(padding=(0, 2))
@@ -192,15 +203,17 @@ def check(
                     with Live(
                         create_display(1), console=console, refresh_per_second=10
                     ) as live:
-                        # Create installer instance with silent mode
-                        installer = AutoInstaller(
-                            config_data["file_path"],
-                            result["downloadUrl"],
-                            silent=True,
-                            fresh_install=is_fresh_install,
-                            auto_launch=auto_launch,
-                            process_name=process_name,
-                        )
+                        installer = None
+                        if install_method == "download":
+                            # Create installer instance with silent mode
+                            installer = AutoInstaller(
+                                config_data["file_path"],
+                                result["downloadUrl"],
+                                silent=True,
+                                fresh_install=is_fresh_install,
+                                auto_launch=auto_launch,
+                                process_name=process_name,
+                            )
 
                         # Manually run each step with UI updates
                         try:
@@ -209,56 +222,110 @@ def check(
                             # Step 1: Kill process (skip for fresh install)
                             if not is_fresh_install:
                                 live.update(create_display(current_step))
-                                if not installer._kill_process():
-                                    raise Exception(
-                                        "Failed to stop running processes"
+                                if install_method == "download":
+                                    assert installer is not None
+                                    if not installer._kill_process():
+                                        raise Exception(
+                                            "Failed to stop running processes"
+                                        )
+                                else:
+                                    # For script installs, reuse AutoInstaller's kill logic for consistency
+                                    tmp_installer = AutoInstaller(
+                                        config_data["file_path"],
+                                        "about:blank",
+                                        silent=True,
+                                        fresh_install=False,
+                                        auto_launch=False,
+                                        process_name=process_name,
                                     )
+                                    if not tmp_installer._kill_process():
+                                        raise Exception(
+                                            "Failed to stop running processes"
+                                        )
                                 current_step += 1
 
                             # Step N: Download (with spinner)
                             live.update(create_display(current_step))
-                            if not installer._download():
-                                raise Exception("Failed to download new version")
+                            if install_method == "download":
+                                assert installer is not None
+                                if not installer._download():
+                                    raise Exception("Failed to download new version")
+                            else:
+                                install_script = config_data.get("install_script")
+                                if not install_script:
+                                    raise Exception("install_script not set for script install")
+                                live.stop()
+                                console.print("\n[cyan]Running install script...[/cyan]")
+                                script_result = run_install_script(install_script)
+                                if script_result.returncode != 0:
+                                    raise Exception(
+                                        (script_result.stderr or script_result.stdout or "").strip()
+                                        or "Install script failed"
+                                    )
+                                live.start()
                             current_step += 1
 
                             # Step N+1: Extract
                             live.update(create_display(current_step))
 
-                            # Check if package type requires sudo (needs interactive terminal)
-                            needs_sudo = False
-                            if installer.downloaded_file:
-                                pkg_type = detect_package_type(installer.downloaded_file.name)
-                                needs_sudo = pkg_type in (
-                                    PackageType.DEB,
-                                    PackageType.PACMAN,
-                                    PackageType.RPM,
-                                )
+                            if install_method == "download":
+                                assert installer is not None
+                                # Check if package type requires sudo (needs interactive terminal)
+                                needs_sudo = False
+                                if installer.downloaded_file:
+                                    pkg_type = detect_package_type(installer.downloaded_file.name)
+                                    needs_sudo = pkg_type in (
+                                        PackageType.DEB,
+                                        PackageType.PACMAN,
+                                        PackageType.RPM,
+                                    )
 
-                            if needs_sudo:
-                                # Stop Live display to allow sudo password prompt
-                                live.stop()
-                                console.print(
-                                    f"\n[cyan]Installing {installer.downloaded_file.name}...[/cyan]"
-                                )
-                                if not installer._extract_and_overwrite():
-                                    raise Exception("Failed to extract and install")
-                                # Restart live display for remaining steps
-                                live.start()
+                                if needs_sudo:
+                                    # Stop Live display to allow sudo password prompt
+                                    live.stop()
+                                    console.print(
+                                        f"\n[cyan]Installing {installer.downloaded_file.name}...[/cyan]"
+                                    )
+                                    if not installer._extract_and_overwrite():
+                                        raise Exception("Failed to extract and install")
+                                    # Restart live display for remaining steps
+                                    live.start()
+                                else:
+                                    if not installer._extract_and_overwrite():
+                                        raise Exception("Failed to extract and install")
                             else:
-                                if not installer._extract_and_overwrite():
-                                    raise Exception("Failed to extract and install")
+                                # Script already ran; use this step as a quick verification
+                                if not Path(config_data["file_path"]).expanduser().exists():
+                                    raise Exception(
+                                        f"Expected installed binary not found at {config_data['file_path']}"
+                                    )
                             current_step += 1
 
                             # Step N+2: Start process (only if auto_launch is enabled)
                             if auto_launch:
                                 live.update(create_display(current_step))
-                                if not installer._start_process():
-                                    raise Exception("Failed to start application")
+                                if install_method == "download":
+                                    assert installer is not None
+                                    if not installer._start_process():
+                                        raise Exception("Failed to start application")
+                                else:
+                                    tmp_installer = AutoInstaller(
+                                        config_data["file_path"],
+                                        "about:blank",
+                                        silent=True,
+                                        fresh_install=True,
+                                        auto_launch=True,
+                                        process_name=process_name,
+                                    )
+                                    if not tmp_installer._start_process():
+                                        raise Exception("Failed to start application")
                                 current_step += 1
 
                             # Final step: Cleanup
                             live.update(create_display(current_step))
-                            installer._cleanup()
+                            if install_method == "download":
+                                assert installer is not None
+                                installer._cleanup()
                             current_step += 1
 
                             # Show completion

@@ -1,7 +1,7 @@
 """Configuration schema for version-checker using Hydra structured configs."""
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Optional
 
 from hydra.core.config_store import ConfigStore
 
@@ -20,6 +20,10 @@ class VersionCheckerConfig:
         timeout: HTTP request timeout in seconds (default: 10).
         auto_launch: Auto-launch app after installation (default: False).
         process_name: Process name to kill before update (optional, defaults to file_path stem).
+        install_method: Installation method to use when auto-installing (default: "download").
+        install_script: Shell script to run when install_method is "script".
+        version_timeout: Timeout for running version probes (default: 2).
+        version_probes: Ordered list of probes to run for installed version detection.
     """
 
     # Required fields
@@ -33,6 +37,17 @@ class VersionCheckerConfig:
     timeout: int = 10
     auto_launch: bool = False
     process_name: Optional[str] = None
+    auto_install: bool = False
+    update_type: str = "scrape"
+    github_repo: Optional[str] = None
+    version_pattern: Optional[str] = None
+    default_package_type: Optional[str] = None
+
+    install_method: str = "download"
+    install_script: Optional[str] = None
+
+    version_timeout: int = 2
+    version_probes: Optional[list[dict[str, Any]]] = None
 
 
 def register_configs() -> None:

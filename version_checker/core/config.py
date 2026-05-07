@@ -3,7 +3,7 @@
 import sys
 import time
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import Any, List, Optional, Sequence
 
 import questionary
 from hydra import compose, initialize_config_dir
@@ -20,6 +20,15 @@ from version_checker.utils.helpers import (
 )
 
 console = Console()
+
+# Version probe allowlist (kept small on purpose for safety).
+# Extend intentionally as needed.
+_ALLOWED_VERSION_PROBE_ARGS: set[str] = {
+    "--version",
+    "-V",
+    "-v",
+    "version",
+}
 
 # Custom style for questionary to match rich aesthetics
 MENU_STYLE = Style(
@@ -203,6 +212,12 @@ def load_config(
                 "site_url": None,
                 "css_selector": None,
                 "auto_install": False,
+                "auto_launch": False,
+                "process_name": None,
+                "install_method": "download",
+                "install_script": None,
+                "version_probes": None,
+                "version_timeout": 2,
             }
 
             # Only add missing defaults
@@ -211,6 +226,57 @@ def load_config(
                     OmegaConf.set_struct(cfg, False)  # Temporarily disable struct mode
                     cfg[key] = value
                     OmegaConf.set_struct(cfg, True)  # Re-enable struct mode
+
+            # Validate install settings
+            install_method = cfg.get("install_method", "download")
+            if install_method not in ("download", "script"):
+                raise ConfigError(
+                    "Invalid install_method: "
+                    f"{install_method}. Must be 'download' or 'script'"
+                )
+            if install_method == "script":
+                install_script = cfg.get("install_script")
+                if not install_script or not isinstance(install_script, str):
+                    raise ConfigError(
+                        "install_method is 'script' but install_script is missing"
+                    )
+
+            # Validate version probe settings (optional)
+            version_timeout = cfg.get("version_timeout", 2)
+            if not isinstance(version_timeout, int) or version_timeout <= 0:
+                raise ConfigError("version_timeout must be a positive integer")
+
+            version_probes = cfg.get("version_probes")
+            if version_probes is not None:
+                if not isinstance(version_probes, Sequence):
+                    raise ConfigError("version_probes must be a list of probe objects")
+
+                for i, probe in enumerate(version_probes):
+                    if isinstance(probe, DictConfig):
+                        probe = OmegaConf.to_container(probe, resolve=True)
+                    if not isinstance(probe, dict):
+                        raise ConfigError(f"version_probes[{i}] must be a mapping")
+
+                    args = probe.get("args")
+                    regex = probe.get("regex")
+
+                    if not isinstance(args, Sequence) or isinstance(args, (str, bytes)):
+                        raise ConfigError(f"version_probes[{i}].args must be a list of strings")
+                    if not args:
+                        raise ConfigError(f"version_probes[{i}].args must not be empty")
+                    for arg in args:
+                        if not isinstance(arg, str) or not arg.strip():
+                            raise ConfigError(
+                                f"version_probes[{i}].args entries must be non-empty strings"
+                            )
+                        # enforce allowlist for safety / determinism
+                        if arg not in _ALLOWED_VERSION_PROBE_ARGS:
+                            raise ConfigError(
+                                f"version_probes[{i}].args contains disallowed token: {arg!r}"
+                            )
+
+                    if not isinstance(regex, str) or not regex.strip():
+                        raise ConfigError(f"version_probes[{i}].regex must be a non-empty string")
 
             return cfg
 

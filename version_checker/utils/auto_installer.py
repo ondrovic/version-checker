@@ -2,6 +2,7 @@
 
 import getpass
 import os
+import re
 import shutil
 import stat
 import subprocess
@@ -408,20 +409,71 @@ class PacmanInstaller(BasePackageInstaller):
         """Check if pacman is available."""
         return shutil.which("pacman") is not None
 
+    def _parse_conflict_owners(self, stderr: str) -> list[str]:
+        """
+        Parse owning packages from pacman "conflicting files" output.
+
+        Example line:
+          tabby-terminal: /usr/share/... exists in filesystem (owned by tabby)
+        """
+        owners: list[str] = []
+        for match in re.finditer(r"\(owned by ([^)]+)\)", stderr):
+            owner = match.group(1).strip()
+            if owner and owner not in owners:
+                owners.append(owner)
+        return owners
+
     def install(self) -> bool:
         """Install package using pacman."""
         try:
             self._print(f"  → Installing {self.downloaded_file.name} with pacman...")
 
-            result = run_sudo_command(
-                ["pacman", "-U", "--noconfirm", str(self.downloaded_file)],
-                silent=self.silent,
-            )
+            install_cmd = ["pacman", "-U", "--noconfirm", str(self.downloaded_file)]
+            result = run_sudo_command(install_cmd, silent=self.silent)
 
             if result.returncode != 0:
+                stderr = (result.stderr or "").strip()
+
+                # Auto-fix: conflicting files owned by existing package(s)
+                if "conflicting files" in stderr.lower():
+                    owners = self._parse_conflict_owners(stderr)
+                    if owners:
+                        owners_str = ", ".join(owners)
+                        self._print(
+                            "  → Detected conflicting files owned by: "
+                            f"[bold]{owners_str}[/bold]"
+                        )
+                        self._print(
+                            "  → Removing conflicting package(s) and retrying..."
+                        )
+
+                        remove_cmd = ["pacman", "-Rns", "--noconfirm", *owners]
+                        remove_result = run_sudo_command(
+                            remove_cmd, silent=self.silent
+                        )
+                        if remove_result.returncode == 0:
+                            retry_result = run_sudo_command(
+                                install_cmd, silent=self.silent
+                            )
+                            if retry_result.returncode == 0:
+                                self._print("  → Package installed successfully")
+                                return True
+
+                            self._print("[red]Error:[/red] pacman retry failed")
+                            retry_stderr = (retry_result.stderr or "").strip()
+                            if retry_stderr:
+                                self._print(f"  {retry_stderr}")
+                            return False
+
+                        self._print("[red]Error:[/red] pacman removal failed")
+                        remove_stderr = (remove_result.stderr or "").strip()
+                        if remove_stderr:
+                            self._print(f"  {remove_stderr}")
+                        return False
+
                 self._print("[red]Error:[/red] pacman failed")
-                if result.stderr:
-                    self._print(f"  {result.stderr.strip()}")
+                if stderr:
+                    self._print(f"  {stderr}")
                 return False
 
             self._print("  → Package installed successfully")

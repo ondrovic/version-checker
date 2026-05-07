@@ -40,17 +40,58 @@ css_selector: "body > nav > div > div > div.hidden.flex-1.items-center.justify-c
 # default_package_type: ".tar.gz"
 
 # ==============================================================================
+# VERSION DETECTION (optional, cross-platform)
+# ==============================================================================
+#
+# By default, version-checker uses OS-specific heuristics to determine the
+# installed version. Some tools only expose version via CLI flags like --version.
+#
+# Optional: Timeout (seconds) for running version probes (default: 2)
+# version_timeout: 2
+#
+# Optional: Ordered list of version probes to try.
+# Each probe runs: <file_path> + args, then applies regex to stdout+stderr.
+# The regex must contain ONE capture group for the version.
+#
+# version_probes:
+#   - args: ["--version"]
+#     regex: "(\\d+\\.\\d+\\.\\d+)"
+#   - args: ["version"]
+#     regex: "v?(\\d+\\.\\d+\\.\\d+)"
+
+# ==============================================================================
 # COMMON CONFIGURATION (required for all providers)
 # ==============================================================================
 
+# Optional: Friendly application name (used for ${name} interpolation)
+# name: "heroic"
+
 # Required: Path to the installed executable
 file_path: "C:/Program Files/Software/software.exe"
+
+# Optional: You can reference ${name} inside file_path (and other fields you control)
+# Example (Linux):
+# name: "heroic"
+# file_path: "/usr/bin/${name}"
 
 # Optional: Base URL for constructing download URLs (scrape provider only)
 # The architecture and OS will be automatically detected and appended
 # Example: "https://example.com/downloads/Software_" becomes
 #          "https://example.com/downloads/Software_0.23.4_windows_x64.zip"
 base_download_url: "https://example.com/downloads/Software_"
+
+# ==============================================================================
+# INSTALLATION (optional)
+# ==============================================================================
+#
+# Optional: Select how to install when using --auto-install / auto_install: true
+# - "download" (default): download an asset (or build URL) and use AutoInstaller
+# - "script": run install_script (useful when projects provide an official installer script)
+#
+# install_method: "download"
+#
+# Required if install_method is "script":
+# install_script: "curl -fsSL https://example.com/install.sh | sh"
 
 # Optional: Show detailed JSON output (default: false)
 detailed_info: false

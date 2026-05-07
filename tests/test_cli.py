@@ -513,6 +513,60 @@ class TestShowConfigCommand:
     @patch("version_checker.cli.load_config")
     @patch("version_checker.cli.scrape_version_number")
     @patch("version_checker.cli.clear_screen")
+    @patch("version_checker.cli.run_install_script")
+    @patch("version_checker.cli.AutoInstaller")
+    @patch("version_checker.cli.Live")
+    def test_check_auto_install_script_path_skips_auto_installer(
+        self,
+        mock_live,
+        mock_installer_class,
+        mock_run_script,
+        mock_clear,
+        mock_scrape,
+        mock_load_config,
+    ):
+        """Test script install path runs script and does not create AutoInstaller."""
+        mock_load_config.return_value = {
+            "update_type": "github",
+            "github_repo": "owner/repo",
+            "file_path": "/path/to/app.exe",
+            "detailed_info": False,
+            "install_method": "script",
+            "install_script": "echo installing",
+            "auto_launch": False,
+            "process_name": "app",
+        }
+        mock_scrape.return_value = {
+            "installedVersion": "1.0.0",
+            "latestVersion": "2.0.0",
+            "needsUpdate": True,
+            "freshInstall": True,
+            # downloadUrl may be absent for script installs; ensure no hard dependency
+        }
+
+        mock_run_script.return_value = MagicMock(returncode=0, stdout="", stderr="")
+
+        # Mock Live context manager
+        mock_live_instance = MagicMock()
+        mock_live.return_value.__enter__ = mock_live_instance
+        mock_live.return_value.__exit__ = MagicMock()
+
+        runner = CliRunner()
+        with runner.isolated_filesystem():
+            Path("config.yaml").write_text("site_url: https://example.com\n")
+
+            with patch("pathlib.Path.exists", return_value=True):
+                result = runner.invoke(
+                    check, ["--config", "config.yaml", "--no-clear", "-a"]
+                )
+
+        assert result.exit_code == 0
+        mock_installer_class.assert_not_called()
+        mock_run_script.assert_called_once()
+
+    @patch("version_checker.cli.load_config")
+    @patch("version_checker.cli.scrape_version_number")
+    @patch("version_checker.cli.clear_screen")
     @patch("version_checker.cli.AutoInstaller")
     @patch("version_checker.cli.Live")
     def test_check_auto_install_fresh_install(

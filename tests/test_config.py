@@ -291,6 +291,38 @@ class TestConfigValidation:
 
         assert "invalid update_type" in str(exc_info.value).lower()
 
+    def test_install_method_script_requires_install_script(self, temp_dir):
+        """Test script installs require install_script."""
+        config_file = temp_dir / "config.yaml"
+        config_file.write_text(
+            "update_type: github\n"
+            "github_repo: 'owner/repo'\n"
+            "file_path: '/path/to/exe'\n"
+            "install_method: script\n"
+        )
+
+        with pytest.raises(ConfigError) as exc_info:
+            load_config(str(config_file))
+
+        assert "install_script" in str(exc_info.value).lower()
+
+    def test_version_probes_validation_disallowed_arg(self, temp_dir):
+        """Test version_probes args are validated against allowlist."""
+        config_file = temp_dir / "config.yaml"
+        config_file.write_text(
+            "update_type: github\n"
+            "github_repo: 'owner/repo'\n"
+            "file_path: '/path/to/exe'\n"
+            "version_probes:\n"
+            "  - args: ['--help']\n"
+            "    regex: '(\\\\d+\\\\.\\\\d+\\\\.\\\\d+)'\n"
+        )
+
+        with pytest.raises(ConfigError) as exc_info:
+            load_config(str(config_file))
+
+        assert "disallowed" in str(exc_info.value).lower()
+
 
 class TestSelectConfigFile:
     """Test cases for config file selection functionality."""

@@ -4,7 +4,7 @@ import tarfile
 import zipfile
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import psutil
 import pytest
@@ -303,6 +303,88 @@ class TestPacmanInstaller:
         result = installer.install()
 
         assert result is True
+        mock_sudo.assert_called_once()
+
+    @patch("version_checker.utils.auto_installer.run_sudo_command")
+    @patch("shutil.which")
+    def test_install_conflicting_files_auto_remove_and_retry_success(
+        self, mock_which: MagicMock, mock_sudo: MagicMock, temp_dir: Path
+    ) -> None:
+        mock_which.return_value = "/usr/bin/pacman"
+
+        stderr = (
+            "error: failed to commit transaction (conflicting files)\n"
+            "tabby-terminal: /usr/share/applications/tabby.desktop exists in filesystem (owned by tabby)\n"
+        )
+        mock_sudo.side_effect = [
+            MagicMock(returncode=1, stderr=stderr),  # install fails
+            MagicMock(returncode=0, stderr=""),  # remove owner succeeds
+            MagicMock(returncode=0, stderr=""),  # retry succeeds
+        ]
+
+        pkg_path = temp_dir / "tabby-terminal.pkg.tar.zst"
+        pkg_path.write_bytes(b"fake pkg")
+
+        installer = PacmanInstaller(pkg_path, temp_dir / "tabby", silent=True)
+        assert installer.install() is True
+
+        install_cmd = ["pacman", "-U", "--noconfirm", str(pkg_path)]
+        remove_cmd = ["pacman", "-Rns", "--noconfirm", "tabby"]
+        assert mock_sudo.call_args_list == [
+            call(install_cmd, silent=True),
+            call(remove_cmd, silent=True),
+            call(install_cmd, silent=True),
+        ]
+
+    @patch("version_checker.utils.auto_installer.run_sudo_command")
+    @patch("shutil.which")
+    def test_install_conflicting_files_multiple_owners_removed_then_retry(
+        self, mock_which: MagicMock, mock_sudo: MagicMock, temp_dir: Path
+    ) -> None:
+        mock_which.return_value = "/usr/bin/pacman"
+
+        stderr = (
+            "error: failed to commit transaction (conflicting files)\n"
+            "pkgA: /usr/share/foo exists in filesystem (owned by ownerA)\n"
+            "pkgA: /usr/share/bar exists in filesystem (owned by ownerB)\n"
+        )
+        mock_sudo.side_effect = [
+            MagicMock(returncode=1, stderr=stderr),  # install fails
+            MagicMock(returncode=0, stderr=""),  # remove owners succeeds
+            MagicMock(returncode=0, stderr=""),  # retry succeeds
+        ]
+
+        pkg_path = temp_dir / "pkgA.pkg.tar.zst"
+        pkg_path.write_bytes(b"fake pkg")
+
+        installer = PacmanInstaller(pkg_path, temp_dir / "pkgA", silent=True)
+        assert installer.install() is True
+
+        install_cmd = ["pacman", "-U", "--noconfirm", str(pkg_path)]
+        # Order is derived from stderr parse order
+        remove_cmd = ["pacman", "-Rns", "--noconfirm", "ownerA", "ownerB"]
+        assert mock_sudo.call_args_list == [
+            call(install_cmd, silent=True),
+            call(remove_cmd, silent=True),
+            call(install_cmd, silent=True),
+        ]
+
+    @patch("version_checker.utils.auto_installer.run_sudo_command")
+    @patch("shutil.which")
+    def test_install_conflicting_files_owner_parse_failed_returns_false(
+        self, mock_which: MagicMock, mock_sudo: MagicMock, temp_dir: Path
+    ) -> None:
+        mock_which.return_value = "/usr/bin/pacman"
+
+        stderr = "error: failed to commit transaction (conflicting files)\nno owners here\n"
+        mock_sudo.return_value = MagicMock(returncode=1, stderr=stderr)
+
+        pkg_path = temp_dir / "pkgA.pkg.tar.zst"
+        pkg_path.write_bytes(b"fake pkg")
+
+        installer = PacmanInstaller(pkg_path, temp_dir / "pkgA", silent=True)
+        assert installer.install() is False
+
         mock_sudo.assert_called_once()
 
 

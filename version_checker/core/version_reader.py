@@ -10,7 +10,7 @@ import shutil
 import subprocess
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, Sequence
 
 import pefile
 
@@ -80,6 +80,52 @@ class VersionReader:
 
         return version
 
+    def get_version_from_probes(
+        self,
+        file_path: str,
+        *,
+        version_probes: Sequence[dict[str, Any]],
+        version_timeout: int = 2,
+    ) -> Optional[str]:
+        """
+        Attempt to get installed version by running CLI probes.
+
+        Each probe runs the binary at file_path with probe["args"] and extracts
+        the version from combined stdout+stderr using probe["regex"].
+
+        Args:
+            file_path: Path to installed executable.
+            version_probes: Ordered list of probe dicts with keys:
+                - "args": list[str]
+                - "regex": str with ONE capture group
+            version_timeout: Timeout in seconds for each probe.
+
+        Returns:
+            Extracted version string or None if probes fail.
+        """
+        binary_path = str(Path(file_path).expanduser())
+        if not Path(binary_path).exists():
+            return None
+
+        for probe in version_probes:
+            args = probe.get("args")
+            regex = probe.get("regex")
+            if not isinstance(args, Sequence) or isinstance(args, (str, bytes)):
+                continue
+            if not isinstance(regex, str) or not regex.strip():
+                continue
+
+            version = self._run_probe_and_extract(
+                binary_path=binary_path,
+                args=[str(a) for a in args],
+                pattern=regex,
+                timeout_seconds=version_timeout,
+            )
+            if version:
+                return version
+
+        return None
+
     def _get_version_direct(self, file_path: str) -> Optional[str]:
         """
         Get version directly without caching.
@@ -108,6 +154,48 @@ class VersionReader:
 
         # Fallback to old method if _get_file_properties fails
         return self._read_version_fallback(file_path)
+
+    def _run_probe_and_extract(
+        self,
+        *,
+        binary_path: str,
+        args: list[str],
+        pattern: str,
+        timeout_seconds: int,
+    ) -> Optional[str]:
+        """
+        Run a version probe and extract a version string.
+
+        Notes:
+        - Parses stdout+stderr (some CLIs write version to stderr).
+        - Requires exactly one capture group in the regex.
+        """
+        try:
+            regex = re.compile(pattern)
+        except re.error:
+            return None
+
+        if regex.groups != 1:
+            return None
+
+        try:
+            completed = subprocess.run(
+                [binary_path, *args],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=timeout_seconds,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+
+        output = (completed.stdout or "") + "\n" + (completed.stderr or "")
+        match = regex.search(output)
+        if not match:
+            return None
+        extracted = match.group(1).strip()
+        return extracted or None
 
     def _get_file_properties(self, file_path: str) -> dict[str, Any]:
         """

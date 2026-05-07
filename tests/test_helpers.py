@@ -1,14 +1,12 @@
 """Tests for helper utility functions."""
 
-import os
-import platform
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
 
 from version_checker.utils.helpers import (
     clear_screen,
+    find_yaml_configs,
     format_version,
     get_config_dir,
     get_default_config_path,
@@ -240,3 +238,95 @@ class TestGetDefaultConfigPath:
 
         expected_path = xdg_config / "version-checker" / "config.yaml"
         assert config_path == expected_path
+
+
+class TestFindYamlConfigs:
+    """Test cases for find_yaml_configs function."""
+
+    def test_find_yaml_configs_empty_directory(self, temp_dir, monkeypatch):
+        """Test find_yaml_configs returns empty list for empty directory."""
+        config_dir = temp_dir / "version-checker"
+        config_dir.mkdir(parents=True)
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(temp_dir))
+
+        result = find_yaml_configs()
+
+        assert result == []
+
+    def test_find_yaml_configs_finds_yaml_files(self, temp_dir, monkeypatch):
+        """Test find_yaml_configs finds .yaml files."""
+        config_dir = temp_dir / "version-checker"
+        config_dir.mkdir(parents=True)
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(temp_dir))
+
+        # Create some yaml files
+        (config_dir / "app1.yaml").touch()
+        (config_dir / "app2.yaml").touch()
+
+        result = find_yaml_configs()
+
+        assert len(result) == 2
+        assert all(p.suffix == ".yaml" for p in result)
+
+    def test_find_yaml_configs_finds_yml_files(self, temp_dir, monkeypatch):
+        """Test find_yaml_configs finds .yml files."""
+        config_dir = temp_dir / "version-checker"
+        config_dir.mkdir(parents=True)
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(temp_dir))
+
+        # Create yml files
+        (config_dir / "app1.yml").touch()
+
+        result = find_yaml_configs()
+
+        assert len(result) == 1
+        assert result[0].suffix == ".yml"
+
+    def test_find_yaml_configs_excludes_example_files(self, temp_dir, monkeypatch):
+        """Test find_yaml_configs excludes example files."""
+        config_dir = temp_dir / "version-checker"
+        config_dir.mkdir(parents=True)
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(temp_dir))
+
+        # Create various files
+        (config_dir / "config.yaml").touch()
+        (config_dir / "config.yaml.example").touch()
+        (config_dir / "config.example.yaml").touch()
+
+        result = find_yaml_configs()
+
+        assert len(result) == 1
+        assert result[0].name == "config.yaml"
+
+    def test_find_yaml_configs_sorted_by_name(self, temp_dir, monkeypatch):
+        """Test find_yaml_configs returns files sorted by name."""
+        config_dir = temp_dir / "version-checker"
+        config_dir.mkdir(parents=True)
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(temp_dir))
+
+        # Create files in non-alphabetical order
+        (config_dir / "zebra.yaml").touch()
+        (config_dir / "apple.yaml").touch()
+        (config_dir / "mango.yaml").touch()
+
+        result = find_yaml_configs()
+
+        assert len(result) == 3
+        assert result[0].name == "apple.yaml"
+        assert result[1].name == "mango.yaml"
+        assert result[2].name == "zebra.yaml"
+
+    def test_find_yaml_configs_nonexistent_directory(self, temp_dir, monkeypatch):
+        """Test find_yaml_configs returns empty list if directory doesn't exist."""
+        # Point to a non-existent directory
+        nonexistent = temp_dir / "nonexistent"
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(nonexistent))
+
+        # The get_config_dir creates it, so we mock it
+        with patch(
+            "version_checker.utils.helpers.get_config_dir",
+            return_value=nonexistent / "version-checker",
+        ):
+            result = find_yaml_configs()
+
+        assert result == []

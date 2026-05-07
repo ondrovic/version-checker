@@ -27,7 +27,7 @@ def is_windows() -> bool:
     return platform.system() == "Windows"
 
 
-def get_platform_info() -> dict:
+def get_platform_info() -> dict[str, str]:
     """Get platform information."""
     return {
         "system": platform.system(),
@@ -75,3 +75,30 @@ def get_default_config_path() -> Path:
         Path object pointing to the default config.yaml location.
     """
     return get_config_dir() / "config.yaml"
+
+
+def find_yaml_configs() -> list[Path]:
+    """
+    Find all YAML configuration files in the config directory.
+
+    Searches for files with .yaml or .yml extensions, excluding
+    example files (*.example.yaml, *.yaml.example).
+
+    Returns:
+        List of Path objects for found YAML config files, sorted by name.
+    """
+    config_dir = get_config_dir()
+    yaml_files: list[Path] = []
+
+    if not config_dir.exists():
+        return yaml_files
+
+    for pattern in ["*.yaml", "*.yml"]:
+        for file_path in config_dir.glob(pattern):
+            # Skip example files
+            if ".example" in file_path.name or file_path.name.endswith(".example"):
+                continue
+            yaml_files.append(file_path)
+
+    # Sort by filename for consistent ordering
+    return sorted(yaml_files, key=lambda p: p.name)

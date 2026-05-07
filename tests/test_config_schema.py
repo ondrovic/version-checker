@@ -63,6 +63,17 @@ class TestVersionCheckerConfig:
             "base_download_url",
             "detailed_info",
             "timeout",
+            "auto_launch",
+            "process_name",
+            "auto_install",
+            "update_type",
+            "github_repo",
+            "version_pattern",
+            "default_package_type",
+            "install_method",
+            "install_script",
+            "version_timeout",
+            "version_probes",
         }
 
         assert field_names == expected_fields

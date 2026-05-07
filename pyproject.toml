@@ -1,9 +1,9 @@
 [project]
 name = "version-checker"
-version = "0.1.0"
-description = "A tool to check for software updates by comparing installed executable versions with web-scraped latest versions"
+version = "1.0.0"
+description = "A tool to check for software updates that are installed unconventionally"
 authors = [
-    {name = "Your Name", email = "your.email@example.com"}
+    {name = "Chris Ondrovic", email = "ondrovic@gmail.com"}
 ]
 readme = "README.md"
 license = {text = "MIT"}
@@ -32,6 +32,7 @@ dependencies = [
     "rich",
     "ruff>=0.14.3",
     "hydra-core>=1.3",
+    "questionary>=2.0.0",
 ]
 
 [project.optional-dependencies]
@@ -79,3 +80,17 @@ ignore_missing_imports = true
 minversion = "6.0"
 addopts = "-ra -q --strict-markers --cov=version_checker"
 testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["version_checker", "tests"]
+omit = [
+    "debug_cache.py",
+    "*/__pycache__/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]

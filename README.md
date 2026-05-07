@@ -149,6 +149,17 @@ version-checker check -c myapp.yaml --auto-install
 - Creates backup of old version (.exe.bak)
 - Clean error handling and user feedback
 
+### Arch/Pacman note (conflicting files)
+
+On Arch-based systems, `pacman -U` may fail with errors like:
+`failed to commit transaction (conflicting files)` and lines ending with `(owned by <package>)`.
+
+When auto-installing a `.pkg.tar.*` (or `.pacman`) package, version-checker will automatically:
+- Remove the owning package(s) reported by pacman (`pacman -Rns --noconfirm <owners>`)
+- Retry the install once
+
+This is designed to handle package renames/replacements such as `tabby` → `tabby-terminal`.
+
 ### Check Executable Version
 
 Check the version of a specific executable file:
@@ -241,6 +252,25 @@ css_selector: ".version-number"           # CSS selector for version element on 
 base_download_url: "https://example.com/downloads/MyApp_"  # Base URL for downloads (enables auto-install)
 detailed_info: false    # Show detailed JSON output
 timeout: 10            # HTTP request timeout in seconds
+
+# Optional: version probing (cross-platform)
+# Useful when a tool only exposes its version via CLI flags like --version.
+version_timeout: 2
+version_probes:
+  - args: ["--version"]
+    regex: "(\\d+\\.\\d+\\.\\d+)"
+
+# Optional: script-based install (used when auto_install is enabled)
+install_method: "script"  # "download" (default) or "script"
+install_script: "curl -fsSL https://example.com/install.sh | sh"
+```
+
+Optional interpolation for less repetition:
+
+```yaml
+name: heroic
+file_path: "/usr/bin/${name}"
+process_name: "${name}"
 ```
 
 ### Hydra Configuration Overrides
@@ -417,14 +447,14 @@ Here's what the auto-install looks like in action:
 Checking for updates...
 Update available: 1.0.0 → 1.1.0
 
-╭────────────── Auto-Install Progress ──────────────╮
-│ Download URL: https://example.com/MyApp_1.1.0... │
+╭────────────── Auto-Install Progress ───────────────╮
+│ Download URL: https://example.com/MyApp_1.1.0...   │
 │                                                    │
-│ 1. ✓ Stop any running OlivedPro processes        │
-│ 2. ⠋ Download the new version                    │
-│ 3.   Extract and install to the configured...    │
-│ 4.   Start the new version                       │
-│ 5.   Clean up temporary files                    │
+│ 1. ✓ Stop any running <AppName> processes          │
+│ 2. ⠋ Download the new version                      │ 
+│ 3.   Extract and install to the configured...      │
+│ 4.   Start the new version                         │
+│ 5.   Clean up temporary files                      │
 ╰────────────────────────────────────────────────────╯
 
 ✓ Auto-install completed successfully!
